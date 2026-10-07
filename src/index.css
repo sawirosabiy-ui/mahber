@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-bg: #151311;
+    --color-surface: #201D19;
+    --color-surface-elevated: #29251F;
+    --color-text-primary: #F5EFE3;
+    --color-text-secondary: #9E9484;
+    --color-gold: #B89A5A;
+    --color-burgundy: #6F2630;
+    --color-green: #315C48;
+    --color-border: rgba(184, 154, 90, 0.16);
+  }
+
+  html.light {
+    --color-bg: #F5EFE7;
+    --color-surface: #FFFDF8;
+    --color-surface-elevated: #F7F2E8;
+    --color-text-primary: #2B241E;
+    --color-text-secondary: #74695D;
+    --color-gold: #9E7F3D;
+    --color-burgundy: #6F2630;
+    --color-green: #2B5742;
+    --color-border: rgba(116, 105, 93, 0.2);
+  }
+
+  body {
+    font-family: 'Noto Sans Ethiopic', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55;
+    letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overscroll-behavior-y: none;
+  }
+}
+
+/* Custom scrollbar for mobile feel */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(184, 154, 90, 0.2);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(184, 154, 90, 0.4);
+}
+
+/* Mobile safe area helpers */
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Subtle Ethiopian border pattern effect */
+.tibeb-border {
+  border-image: repeating-linear-gradient(
+    45deg,
+    #B89A5A,
+    #B89A5A 4px,
+    transparent 4px,
+    transparent 8px,
+    #6F2630 8px,
+    #6F2630 12px,
+    transparent 12px,
+    transparent 16px,
+    #315C48 16px,
+    #315C48 20px,
+    transparent 20px,
+    transparent 24px
+  ) 1;
+}
+
+/* Touch active feedback */
+.touch-press {
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s ease;
+}
+.touch-press:active {
+  transform: scale(0.975);
+  opacity: 0.9;
+}
