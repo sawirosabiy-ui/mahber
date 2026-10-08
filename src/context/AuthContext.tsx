@@ -138,6 +138,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (isLiveSupabaseConfigured()) {
       await supabase.auth.signOut();
     }
+    localStorage.removeItem('mahber_auth_active');
+    localStorage.removeItem('mahber_current_user_id');
     setIsAuthenticated(false);
   };
 

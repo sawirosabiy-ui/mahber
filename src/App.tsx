@@ -27,7 +27,7 @@ import { WelcomeSplash } from './components/welcome/WelcomeSplash';
 import { LoginView } from './components/auth/LoginView';
 import { NotificationCenter } from './components/notifications/NotificationCenter';
 import { LoadingView, ErrorView } from './components/common/StateViews';
-import { Smartphone, ShieldAlert, LogOut, ArrowLeft } from 'lucide-react';
+import { ShieldAlert, LogOut, ArrowLeft } from 'lucide-react';
 import { MessageReplyInfo, RoomMessageType } from './types';
 
 const MahberAppContent: React.FC = () => {
@@ -40,9 +40,6 @@ const MahberAppContent: React.FC = () => {
     return localStorage.getItem('mahber_entered') === 'true';
   });
   const [activeTab, setActiveTab] = useState<NavTab>('home');
-
-  // Screen preview width selector (for testing 360px, 375px, 390px, 412px)
-  const [simulatedWidth, setSimulatedWidth] = useState<'360' | '375' | '390' | '412' | 'full'>('390');
 
   // Notification center modal state
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
@@ -194,78 +191,11 @@ const MahberAppContent: React.FC = () => {
 
   const currentStudyMezmur = mezmurs.find((m) => m.status === 'current_study');
 
-  // Device width mapping for testing
-  const widthClasses: Record<string, string> = {
-    '360': 'max-w-[360px]',
-    '375': 'max-w-[375px]',
-    '390': 'max-w-[390px]',
-    '412': 'max-w-[412px]',
-    full: 'max-w-md',
-  };
-
   return (
     <div className="min-h-screen bg-[#0e0c0b] text-[#F5EFE3] flex flex-col items-center">
-      {/* Dev / Viewport Toolbar (Allows instant testing across 360, 375, 390, 412px and User Persona) */}
-      <div className="w-full bg-[#1b1714] border-b border-[#B89A5A]/20 px-3 py-1.5 flex flex-wrap items-center justify-between text-[11px] text-gray-400 select-none z-50 gap-2">
-        <div className="flex items-center gap-2">
-          <Smartphone size={13} className="text-[#B89A5A]" />
-          <span className="font-semibold text-gray-300">ስክሪን (Viewport):</span>
-          {(['360', '375', '390', '412'] as const).map((w) => (
-            <button
-              key={w}
-              onClick={() => setSimulatedWidth(w)}
-              className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition ${
-                simulatedWidth === w
-                  ? 'bg-[#B89A5A] text-black font-bold'
-                  : 'bg-black/30 hover:bg-white/10 text-gray-400'
-              }`}
-            >
-              {w}px
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="text-[#B89A5A] font-semibold text-[10px]">ተጠቃሚ (Persona):</span>
-          <select
-            value={currentUser.id}
-            onChange={(e) => {
-              const { switchUser } = useAuth();
-            }}
-            className="hidden"
-          />
-          {/* Persona selector select element */}
-          <select
-            value={currentUser.id}
-            onChange={(e) => {
-              const selectedId = e.target.value;
-              localStorage.setItem('mahber_current_user_id', selectedId);
-              localStorage.setItem('mahber_auth_active', 'true');
-              window.location.reload();
-            }}
-            className="bg-[#151311] text-[#F5EFE3] border border-[#B89A5A]/30 rounded-lg px-2 py-0.5 text-[11px] font-semibold focus:outline-none focus:border-[#B89A5A]"
-          >
-            {allMembers.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.role === 'admin' ? `👑 ${m.amharicName} (Admin)` : `👤 ${m.amharicName} (Member)`}
-              </option>
-            ))}
-          </select>
-
-          <button
-            onClick={() => signOut()}
-            className="flex items-center gap-1 text-[10px] text-[#D98A94] hover:underline ml-1"
-            title="Sign Out"
-          >
-            <LogOut size={12} />
-            <span>ውጣ</span>
-          </button>
-        </div>
-      </div>
-
       {/* Main Mobile App Container */}
       <div
-        className={`w-full ${widthClasses[simulatedWidth]} min-h-screen bg-[#151311] dark:bg-[#151311] light:bg-[#F5EFE7] shadow-2xl relative flex flex-col border-x border-[#B89A5A]/15`}
+        className="w-full max-w-md min-h-screen bg-[#151311] dark:bg-[#151311] light:bg-[#F5EFE7] shadow-2xl relative flex flex-col border-x border-[#B89A5A]/15 pb-20"
       >
         {/* Top App Bar with Notification Bell */}
         <AppBar
