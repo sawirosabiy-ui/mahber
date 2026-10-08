@@ -383,6 +383,54 @@ export const MemberHome: React.FC<MemberHomeProps> = ({
         );
       })()}
 
+      {/* Digital Memory Book & History Shortcut */}
+      <div
+        onClick={() => onNavigateTab('mahber')}
+        className="rounded-3xl p-4 bg-[#201D19] dark:bg-[#201D19] light:bg-[#FFFDF8] border border-[#B89A5A]/25 shadow-sacred flex items-center justify-between cursor-pointer hover:border-[#B89A5A]/50 transition"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-[#B89A5A]/15 border border-[#B89A5A]/30 flex items-center justify-center text-[#B89A5A]">
+            <Sparkles size={20} />
+          </div>
+          <div>
+            <div className="text-xs font-bold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E]">
+              {language === 'am' ? 'የማኅበር ታሪክና ትውስታዎች' : 'Mahber History & Memory Book'}
+            </div>
+            <div className="text-[11px] text-gray-400">
+              {language === 'am' ? 'ያለፉ መሰብሰቢያዎች ፣ ትውስታዎች እና ፎቶዎች' : 'Past gatherings, spiritual memories & photos'}
+            </div>
+          </div>
+        </div>
+        <ArrowRight size={15} className="text-[#B89A5A]" />
+      </div>
+
+      {/* Admin Management Hub Card (Visible strictly to Admins) */}
+      {currentUser.role === 'admin' && (
+        <div
+          onClick={() => onNavigateTab('admin')}
+          className="rounded-3xl p-4 bg-[#6F2630]/20 border border-[#6F2630]/40 shadow-sacred space-y-2 cursor-pointer hover:bg-[#6F2630]/30 transition animate-fade-in"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase font-bold tracking-wider text-[#D98A94]">
+              ⭐ {language === 'am' ? 'የአስተዳዳሪ ማዕከል' : 'Admin Control Hub'}
+            </span>
+            <span className="text-[11px] text-[#B89A5A] font-semibold">
+              {language === 'am' ? 'ወደ አስተዳዳሪ ሂድ →' : 'Open Admin →'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-xs font-bold text-[#F5EFE3]">
+                {language === 'am' ? 'የመገኘት መመዝገቢያ ፣ ኦዲት እና አባላት' : 'Live 4-State Attendance, Audits & Members'}
+              </h4>
+              <p className="text-[10px] text-gray-300">
+                🟢 {language === 'am' ? 'ተገኝቷል' : 'Present'} • 🟡 {language === 'am' ? 'በይቅርታ' : 'Excused'} • 🟠 {language === 'am' ? 'ዘግይቷል' : 'Late (Orange)'} • 🔴 {language === 'am' ? 'ያልተገኘ' : 'Absent'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <SacredDivider />
 
       {/* Attendance Modal */}

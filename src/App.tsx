@@ -206,7 +206,7 @@ const MahberAppContent: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#0e0c0b] text-[#F5EFE3] flex flex-col items-center">
       {/* Dev / Viewport Toolbar (Allows instant testing across 360, 375, 390, 412px and User Persona) */}
-      <div className="w-full bg-[#1b1714] border-b border-[#B89A5A]/20 px-3 py-1.5 flex flex-wrap items-center justify-between text-[11px] text-gray-400 select-none z-50">
+      <div className="w-full bg-[#1b1714] border-b border-[#B89A5A]/20 px-3 py-1.5 flex flex-wrap items-center justify-between text-[11px] text-gray-400 select-none z-50 gap-2">
         <div className="flex items-center gap-2">
           <Smartphone size={13} className="text-[#B89A5A]" />
           <span className="font-semibold text-gray-300">ስክሪን (Viewport):</span>
@@ -225,17 +225,40 @@ const MahberAppContent: React.FC = () => {
           ))}
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <span className="text-[#F5EFE3] font-medium">
-            {currentUser.amharicName.split(' ')[0]} ({isAdmin ? '⭐ Admin' : 'Member'})
-          </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[#B89A5A] font-semibold text-[10px]">ተጠቃሚ (Persona):</span>
+          <select
+            value={currentUser.id}
+            onChange={(e) => {
+              const { switchUser } = useAuth();
+            }}
+            className="hidden"
+          />
+          {/* Persona selector select element */}
+          <select
+            value={currentUser.id}
+            onChange={(e) => {
+              const selectedId = e.target.value;
+              localStorage.setItem('mahber_current_user_id', selectedId);
+              localStorage.setItem('mahber_auth_active', 'true');
+              window.location.reload();
+            }}
+            className="bg-[#151311] text-[#F5EFE3] border border-[#B89A5A]/30 rounded-lg px-2 py-0.5 text-[11px] font-semibold focus:outline-none focus:border-[#B89A5A]"
+          >
+            {allMembers.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.role === 'admin' ? `👑 ${m.amharicName} (Admin)` : `👤 ${m.amharicName} (Member)`}
+              </option>
+            ))}
+          </select>
+
           <button
             onClick={() => signOut()}
-            className="flex items-center gap-1 text-[10px] text-[#D98A94] hover:underline"
+            className="flex items-center gap-1 text-[10px] text-[#D98A94] hover:underline ml-1"
             title="Sign Out"
           >
             <LogOut size={12} />
-            <span>ውጣ (Logout)</span>
+            <span>ውጣ</span>
           </button>
         </div>
       </div>

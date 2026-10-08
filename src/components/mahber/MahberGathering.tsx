@@ -356,6 +356,8 @@ export const MahberGathering: React.FC<MahberGatheringProps> = ({
             {/* Members Attendance List (Strict Privacy Protected) */}
             <div className="divide-y divide-[#B89A5A]/10">
               {activeMembers.map((member) => {
+                const actualAttendanceMap = mahberService.getActualAttendance(gathering.id);
+                const actualStatus = actualAttendanceMap[member.id];
                 const record = attendance.find((a) => a.memberId === member.id);
                 const status = record?.status || 'no_response';
 
@@ -380,9 +382,31 @@ export const MahberGathering: React.FC<MahberGatheringProps> = ({
                       </div>
                     </div>
 
-                    {/* Status Badge */}
+                    {/* Status Badge (Shows recorded Actual Attendance if available, else RSVP) */}
                     <div className="text-right">
-                      {status === 'coming' ? (
+                      {actualStatus ? (
+                        actualStatus.status === 'PRESENT' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#315C48]/25 text-[#427A60] dark:text-[#529575] border border-[#315C48]/40 text-[11px] font-semibold">
+                            <span>🟢</span>
+                            <span>{language === 'am' ? 'ተገኝቷል' : 'Present'}</span>
+                          </span>
+                        ) : actualStatus.status === 'EXCUSED' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#B89A5A]/25 text-[#D3BA7E] border border-[#B89A5A]/40 text-[11px] font-semibold">
+                            <span>🟡</span>
+                            <span>{language === 'am' ? 'በይቅርታ' : 'Excused'}</span>
+                          </span>
+                        ) : actualStatus.status === 'LATE' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#E07A24]/25 text-[#E07A24] border border-[#E07A24]/50 text-[11px] font-bold">
+                            <span>🟠</span>
+                            <span>{language === 'am' ? 'ዘግይቷል' : 'Late'}</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#6F2630]/25 text-[#D98A94] border border-[#6F2630]/40 text-[11px] font-semibold">
+                            <span>🔴</span>
+                            <span>{language === 'am' ? 'ያልተገኘ' : 'Absent'}</span>
+                          </span>
+                        )
+                      ) : status === 'coming' ? (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#315C48]/20 text-[#427A60] dark:text-[#529575] border border-[#315C48]/30 text-[11px] font-medium">
                           <CheckCircle2 size={12} />
                           <span>{t.statusComing}</span>
