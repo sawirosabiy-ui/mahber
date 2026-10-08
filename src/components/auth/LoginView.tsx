@@ -44,20 +44,38 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
           setErrorMessage(res.error || 'Failed to send password reset');
         }
       } else {
+        if (!email.trim() || !password.trim()) {
+          setErrorMessage(
+            language === 'am'
+              ? 'እባክዎ ኢሜይል እና የይለፍ ቃልዎን ያስገቡ።'
+              : 'Please enter both your email and password.'
+          );
+          setLoading(false);
+          return;
+        }
+
         const res = await loginWithCredentials(email, password);
         if (res.success) {
           if (onSuccess) onSuccess();
         } else {
-          setErrorMessage(
-            res.error ||
-              (language === 'am'
-                ? 'የተሳሳተ ኢሜይል ወይም የይለፍ ቃል።'
-                : 'Invalid email or password.')
-          );
+          if (res.error === 'INVALID_PASSWORD') {
+            setErrorMessage(t.authInvalidCredentials);
+          } else if (res.error === 'MEMBER_NOT_FOUND') {
+            setErrorMessage(t.authMemberNotFound);
+          } else if (res.error?.toLowerCase().includes('failed to fetch') || res.error?.toLowerCase().includes('network')) {
+            setErrorMessage(t.authNetworkError);
+          } else {
+            setErrorMessage(res.error || t.authInvalidCredentials);
+          }
         }
       }
     } catch (err: any) {
-      setErrorMessage(err.message || 'An unexpected error occurred');
+      const msg = err?.message || '';
+      if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('network')) {
+        setErrorMessage(t.authNetworkError);
+      } else {
+        setErrorMessage(t.authServerError);
+      }
     } finally {
       setLoading(false);
     }

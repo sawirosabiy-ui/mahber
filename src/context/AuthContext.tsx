@@ -101,11 +101,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     }
 
-    // Secure local verification fallback for the 10 Mahber accounts
-    const emailPrefix = email.toLowerCase().split('@')[0].trim();
+    // Secure verification for the 10 Mahber accounts
+    const cleanInput = email.toLowerCase().trim();
+    const emailPrefix = cleanInput.includes('@') ? cleanInput.split('@')[0].trim() : cleanInput;
+    const cleanPhoneInput = cleanInput.replace(/\D/g, '');
+
     const matched = members.find((m) => {
-      const first = m.name.toLowerCase().split(' ')[0];
-      return first === emailPrefix || m.phone.replace(/\s+/g, '').includes(emailPrefix);
+      const firstName = m.name.toLowerCase().split(' ')[0].trim();
+      const fullName = m.name.toLowerCase().replace(/\s+/g, '');
+      const phoneDigits = m.phone.replace(/\D/g, '');
+      
+      return (
+        firstName === emailPrefix ||
+        fullName === emailPrefix.replace(/\s+/g, '') ||
+        (cleanPhoneInput.length >= 4 && phoneDigits.includes(cleanPhoneInput)) ||
+        m.phone.toLowerCase().includes(emailPrefix)
+      );
     });
 
     if (matched) {
@@ -114,12 +125,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setIsAuthenticated(true);
         return { success: true };
       }
-      return { success: false, error: 'የተሳሳተ የይለፍ ቃል (Invalid password)' };
+      return { success: false, error: 'INVALID_PASSWORD' };
     }
 
     return {
       success: false,
-      error: 'ይህ ኢሜይል በማኅበሩ ውስጥ አልተገኘም (Member email not recognized)',
+      error: 'MEMBER_NOT_FOUND',
     };
   };
 

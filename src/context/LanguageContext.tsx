@@ -139,6 +139,13 @@ export interface Translations {
   adminMaxAdminsNotice: string;
   adminAddMember: string;
   adminEditMember: string;
+
+  // Auth & Connection
+  authInvalidCredentials: string;
+  authMemberNotFound: string;
+  authNetworkError: string;
+  authServerError: string;
+  authAccountError: string;
 }
 
 const translations: Record<Language, Translations> = {
@@ -269,6 +276,12 @@ const translations: Record<Language, Translations> = {
     adminMaxAdminsNotice: 'ደንብ: በማኅበሩ ውስጥ ከ 2 አስተዳዳሪዎች በላይ መኖር አይቻልም።',
     adminAddMember: 'አዲስ አባል አክል',
     adminEditMember: 'አባል አድስ',
+
+    authInvalidCredentials: 'የተሳሳተ ኢሜይል ወይም የይለፍ ቃል ነው። እባክዎ እንደገና ይሞክሩ።',
+    authMemberNotFound: 'ይህ ኢሜይል በማኅበሩ ውስጥ አልተገኘም። እባክዎ ትክክለኛውን የአባልነት ኢሜይል ያስገቡ።',
+    authNetworkError: 'የበይነመረብ (Internet) ግንኙነት ችግር ተከስቷል። እባክዎ መስመርዎን ፈትሸው እንደገና ይሞክሩ።',
+    authServerError: 'የአገልግሎቱ አገልጋይ (Server) ለጊዜው ምላሽ አልሰጠም። እባክዎ ከጥቂት ጊዜ በኋላ ይሞክሩ።',
+    authAccountError: 'የአባልነት መረጃዎን ማግኘት አልተቻለም። እባክዎ ከአስተዳዳሪው ጋር ይገናኙ።',
   },
   en: {
     appTitle: 'Medhanialem Mahber',
@@ -397,6 +410,12 @@ const translations: Record<Language, Translations> = {
     adminMaxAdminsNotice: 'Rule: The Mahber cannot have more than 2 active administrators.',
     adminAddMember: 'Add Member',
     adminEditMember: 'Edit Member',
+
+    authInvalidCredentials: 'Email or password is incorrect. Please check your credentials.',
+    authMemberNotFound: 'Member email not recognized. Please provide your registered Mahber email.',
+    authNetworkError: "We couldn't connect right now. Please check your internet connection and try again.",
+    authServerError: 'The authentication service is temporarily unavailable. Please try again.',
+    authAccountError: 'Your account could not be loaded. Please contact an administrator.',
   }
 };
 

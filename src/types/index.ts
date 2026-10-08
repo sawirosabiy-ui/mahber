@@ -13,8 +13,28 @@ export interface Member {
 }
 
 export type AttendanceStatus = 'coming' | 'cant_come' | 'no_response';
+export type ActualAttendanceStatus = 'PRESENT' | 'EXCUSED' | 'LATE' | 'ABSENT';
 export type AbsenceReasonCategory = 'work' | 'travel' | 'family' | 'personal' | 'health' | 'other';
 export type AdminReviewStatus = 'accepted' | 'needs_review' | 'pending';
+
+export interface GatheringAttendanceEntry {
+  memberId: string;
+  status: ActualAttendanceStatus;
+  note?: string;
+  updatedAt: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  adminUserId: string;
+  adminName: string;
+  action: string;
+  actionAm: string;
+  targetType: 'member' | 'payment' | 'attendance' | 'gathering' | 'mezmur' | 'announcement' | 'system';
+  targetId?: string;
+  details?: string;
+  createdAt: string;
+}
 
 export interface AttendanceRecord {
   id: string;

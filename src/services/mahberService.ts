@@ -1,6 +1,9 @@
 import {
   Gathering,
   AttendanceRecord,
+  ActualAttendanceStatus,
+  GatheringAttendanceEntry,
+  AuditLogEntry,
   MemberContribution,
   ContributionPeriod,
   PaymentEntry,
@@ -44,10 +47,13 @@ import { getNextMahberProjectedDate } from '../utils/ethiopianCalendar';
 // Configurable activity window for "Active" study (in days)
 export const STUDY_ACTIVITY_WINDOW_DAYS = 7;
 export const MAX_MESSAGE_LENGTH = 2000;
+export const MAX_AUDIO_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20MB max
 
 // Storage keys
 const KEY_GATHERINGS = 'mahber_gatherings_v3';
 const KEY_ATTENDANCE = 'mahber_attendance_v3';
+const KEY_ACTUAL_ATTENDANCE = 'mahber_actual_attendance_v1';
+const KEY_AUDIT_LOGS = 'mahber_audit_logs_v1';
 const KEY_PERIODS = 'mahber_periods_v3';
 const KEY_PAYMENTS = 'mahber_payments_v3';
 const KEY_MEZMURS = 'mahber_mezmurs_v3';
@@ -61,6 +67,29 @@ const KEY_ANNOUNCEMENTS = 'mahber_announcements_v5';
 const KEY_PRAYERS = 'mahber_prayers_v5';
 const KEY_NOTIF_PREFS = 'mahber_notif_prefs_v5';
 const KEY_HISTORY = 'mahber_history_v3';
+
+const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
+  {
+    id: 'audit-init-1',
+    adminUserId: 'm1',
+    adminName: 'አበበ ተፈራ (Abebe)',
+    action: 'System Initialized & Security Policies Configured',
+    actionAm: 'የመድኃኔዓለም ማኅበር ስርዓት እና የደህንነት ደንቦች ተዘጋጁ',
+    targetType: 'system',
+    details: '2-Admin model locked, RLS privacy boundaries active',
+    createdAt: '2026-10-01T08:00:00Z',
+  },
+  {
+    id: 'audit-init-2',
+    adminUserId: 'm2',
+    adminName: 'ዳዊት ገብረ (Dawit)',
+    action: 'Initial Gathering Scheduled for Meskerem 27',
+    actionAm: 'የመስከረም 27 ወርሃዊ ማኅበር ተመደበ',
+    targetType: 'gathering',
+    details: 'Location: Bole, Time: 6:00 PM',
+    createdAt: '2026-10-02T10:30:00Z',
+  },
+];
 
 const INITIAL_PERIODS: ContributionPeriod[] = [
   {
@@ -1357,6 +1386,125 @@ class MahberService {
       }
     }
     return INITIAL_HISTORY;
+  }
+
+  // --- ACTUAL ATTENDANCE RECORDING (ADMIN BULK SAVE) ---
+  getActualAttendance(gatheringId: string): Record<string, GatheringAttendanceEntry> {
+    const data = localStorage.getItem(KEY_ACTUAL_ATTENDANCE);
+    if (data) {
+      try {
+        const all: Record<string, Record<string, GatheringAttendanceEntry>> = JSON.parse(data);
+        return all[gatheringId] || {};
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  }
+
+  saveActualAttendance(
+    gatheringId: string,
+    entries: Record<string, { status: ActualAttendanceStatus; note?: string }>,
+    adminUserId?: string,
+    adminName?: string
+  ): void {
+    let all: Record<string, Record<string, GatheringAttendanceEntry>> = {};
+    const data = localStorage.getItem(KEY_ACTUAL_ATTENDANCE);
+    if (data) {
+      try {
+        all = JSON.parse(data);
+      } catch {
+        all = {};
+      }
+    }
+
+    const formatted: Record<string, GatheringAttendanceEntry> = {};
+    const now = new Date().toISOString();
+    Object.entries(entries).forEach(([memberId, entry]) => {
+      formatted[memberId] = {
+        memberId,
+        status: entry.status,
+        note: entry.note,
+        updatedAt: now,
+      };
+    });
+
+    all[gatheringId] = formatted;
+    localStorage.setItem(KEY_ACTUAL_ATTENDANCE, JSON.stringify(all));
+
+    // Auto-record audit log
+    if (adminUserId && adminName) {
+      const presentCount = Object.values(entries).filter((e) => e.status === 'PRESENT').length;
+      const lateCount = Object.values(entries).filter((e) => e.status === 'LATE').length;
+      const excusedCount = Object.values(entries).filter((e) => e.status === 'EXCUSED').length;
+      const absentCount = Object.values(entries).filter((e) => e.status === 'ABSENT').length;
+
+      this.logAuditEvent(
+        adminUserId,
+        adminName,
+        `Recorded gathering attendance (Present: ${presentCount}, Late: ${lateCount}, Excused: ${excusedCount}, Absent: ${absentCount})`,
+        `የማኅበሩ የተሳትፎ መዝገብ ተመዘገበ (የተገኙ: ${presentCount}፣ ያረፈዱ: ${lateCount}፣ በፈቃድ: ${excusedCount}፣ የቀሩ: ${absentCount})`,
+        'attendance',
+        gatheringId,
+        `Gathering ID: ${gatheringId}`
+      );
+    }
+  }
+
+  // --- AUDIT LOGS ---
+  getAuditLogs(): AuditLogEntry[] {
+    const data = localStorage.getItem(KEY_AUDIT_LOGS);
+    if (data) {
+      try {
+        return JSON.parse(data);
+      } catch {
+        return INITIAL_AUDIT_LOGS;
+      }
+    }
+    return INITIAL_AUDIT_LOGS;
+  }
+
+  logAuditEvent(
+    adminUserId: string,
+    adminName: string,
+    action: string,
+    actionAm: string,
+    targetType: AuditLogEntry['targetType'],
+    targetId?: string,
+    details?: string
+  ): AuditLogEntry {
+    const logs = this.getAuditLogs();
+    const newEntry: AuditLogEntry = {
+      id: `audit-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      adminUserId,
+      adminName,
+      action,
+      actionAm,
+      targetType,
+      targetId,
+      details,
+      createdAt: new Date().toISOString(),
+    };
+
+    const updated = [newEntry, ...logs];
+    localStorage.setItem(KEY_AUDIT_LOGS, JSON.stringify(updated));
+    return newEntry;
+  }
+
+  clearAuditLogs(): void {
+    localStorage.setItem(KEY_AUDIT_LOGS, JSON.stringify([]));
+  }
+
+  // --- AUDIO VALIDATION HELPER ---
+  validateAudioFileSize(file: File): { valid: boolean; errorAm?: string; errorEn?: string } {
+    if (file.size > MAX_AUDIO_FILE_SIZE_BYTES) {
+      return {
+        valid: false,
+        errorAm: 'የድምጽ ፋይሉ መጠን ከ20 ሜጋባይት (20MB) መብለጥ የለበትም።',
+        errorEn: 'Audio file size must not exceed 20MB.',
+      };
+    }
+    return { valid: true };
   }
 }
 

@@ -4,6 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import {
   Gathering,
   AttendanceRecord,
+  ActualAttendanceStatus,
+  AuditLogEntry,
   MemberContribution,
   Mezmur,
   MezmurSuggestion,
@@ -36,6 +38,14 @@ import {
   FileCheck,
   Trash2,
   CalendarPlus,
+  Search,
+  ShieldCheck,
+  UserPlus,
+  UserCheck,
+  UserX,
+  Volume2,
+  Upload,
+  History,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -66,10 +76,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onCompleteGathering,
 }) => {
   const { t, language } = useLanguage();
-  const { allMembers, updateMemberRole } = useAuth();
+  const {
+    currentUser,
+    allMembers,
+    updateMemberRole,
+    addMember,
+    updateMemberDetails,
+    deactivateMember,
+  } = useAuth();
 
   const [activeSection, setActiveSection] = useState<
-    'overview' | 'members' | 'attendance' | 'payments' | 'gatherings' | 'mezmur'
+    'overview' | 'gatherings' | 'members' | 'attendance' | 'payments' | 'mezmur' | 'audit'
   >('overview');
 
   // Payment Recording Modal State
@@ -90,11 +107,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newNotes, setNewNotes] = useState('');
   const [gatheringFormError, setGatheringFormError] = useState<string | null>(null);
 
-  // New Mezmur form state
-  const [newMezmurTitleAm, setNewMezmurTitleAm] = useState('');
-  const [newMezmurTitleEn, setNewMezmurTitleEn] = useState('');
-  const [newMezmurCategory, setNewMezmurCategory] = useState('ማርያም');
-
   // Role error feedback
   const [roleError, setRoleError] = useState<string | null>(null);
 
@@ -103,6 +115,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [completeMemoryAm, setCompleteMemoryAm] = useState('');
   const [completeMemoryEn, setCompleteMemoryEn] = useState('');
   const [completePhotoUrl, setCompletePhotoUrl] = useState('');
+
+  // --- ACTUAL ATTENDANCE STATE ---
+  const [actualAttendance, setActualAttendance] = useState<
+    Record<string, { status: ActualAttendanceStatus; note?: string }>
+  >(() => {
+    const gId = gathering?.id || 'default';
+    const saved = mahberService.getActualAttendance(gId);
+    const initial: Record<string, { status: ActualAttendanceStatus; note?: string }> = {};
+    allMembers.forEach((m) => {
+      initial[m.id] = saved[m.id]
+        ? { status: saved[m.id].status, note: saved[m.id].note }
+        : { status: 'PRESENT' };
+    });
+    return initial;
+  });
+  const [attendanceSavedToast, setAttendanceSavedToast] = useState(false);
+
+  // --- MEMBER MANAGEMENT MODALS STATE ---
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [newMemberName, setNewMemberName] = useState('');
+  const [newMemberAmharicName, setNewMemberAmharicName] = useState('');
+  const [newMemberPhone, setNewMemberPhone] = useState('+251 9');
+  const [newMemberBaptismalName, setNewMemberBaptismalName] = useState('');
+  const [newMemberRole, setNewMemberRole] = useState<'member' | 'admin'>('member');
+  const [memberFormError, setMemberFormError] = useState<string | null>(null);
+
+  const [editingMember, setEditingMember] = useState<Member | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editAmharicName, setEditAmharicName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editBaptismalName, setEditBaptismalName] = useState('');
+
+  // --- AUDIT LOG FILTER STATE ---
+  const [auditFilter, setAuditFilter] = useState<string>('all');
+  const [auditSearch, setAuditSearch] = useState<string>('');
 
   // Calculate dynamic metrics
   const activeMembers = allMembers.filter((m) => !m.isDeactivated);
@@ -125,6 +172,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const result = updateMemberRole(member.id, newRole);
     if (!result.success && result.error) {
       setRoleError(result.error);
+    } else {
+      mahberService.logAuditEvent(
+        currentUser.id,
+        currentUser.amharicName,
+        `Role updated for ${member.name} to ${newRole}`,
+        `የ${member.amharicName} ሚና ወደ ${newRole === 'admin' ? 'አስተዳዳሪ' : 'አባል'} ተቀየረ`,
+        'member',
+        member.id,
+        `Role: ${newRole}`
+      );
     }
   };
 
@@ -137,6 +194,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return;
     }
     onRecordPayment(selectedMemberForPayment, amount, paymentNote);
+    const targetMember = allMembers.find((m) => m.id === selectedMemberForPayment);
+    if (targetMember) {
+      mahberService.logAuditEvent(
+        currentUser.id,
+        currentUser.amharicName,
+        `Recorded ETB ${amount} payment for ${targetMember.name}`,
+        `ለ${targetMember.amharicName} ${amount} ብር መዋጮ ተመዘገበ`,
+        'payment',
+        targetMember.id,
+        paymentNote ? `Note: ${paymentNote}` : undefined
+      );
+    }
     setPaymentSavedToast(true);
     setTimeout(() => {
       setPaymentSavedToast(false);
@@ -187,16 +256,122 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       onUpdateGathering(created);
     }
 
+    mahberService.logAuditEvent(
+      currentUser.id,
+      currentUser.amharicName,
+      `Scheduled new gathering on ${newEthDate} at ${newLocation}`,
+      `አዲስ የማኅበር መሰብሰቢያ ለ${newEthDate} ተመደበ`,
+      'gathering',
+      undefined,
+      `Location: ${newLocation}`
+    );
+
     setShowCreateGatheringModal(false);
   };
 
-  const handleCreateMezmur = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMezmurTitleAm.trim()) return;
-    onAddMezmur(newMezmurTitleAm, newMezmurTitleEn || newMezmurTitleAm, newMezmurCategory);
-    setNewMezmurTitleAm('');
-    setNewMezmurTitleEn('');
+  // --- SAVE ACTUAL ATTENDANCE ---
+  const handleSaveActualAttendance = () => {
+    if (!gathering) return;
+    mahberService.saveActualAttendance(
+      gathering.id,
+      actualAttendance,
+      currentUser.id,
+      currentUser.amharicName
+    );
+    setAttendanceSavedToast(true);
+    setTimeout(() => setAttendanceSavedToast(false), 2500);
   };
+
+  // --- ADD MEMBER SUBMIT ---
+  const handleAddMemberSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setMemberFormError(null);
+
+    if (!newMemberName.trim() || !newMemberAmharicName.trim()) {
+      setMemberFormError(
+        language === 'am' ? 'እባክዎን ስም እና የአማርኛ ስም ያስገቡ።' : 'Please provide full name and Amharic name.'
+      );
+      return;
+    }
+
+    const res = addMember({
+      name: newMemberName.trim(),
+      amharicName: newMemberAmharicName.trim(),
+      baptismalName: newMemberBaptismalName.trim() || undefined,
+      phone: newMemberPhone.trim() || '+251 90 000 0000',
+      role: newMemberRole,
+      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    });
+
+    if (!res.success) {
+      setMemberFormError(res.error || 'Failed to add member');
+      return;
+    }
+
+    mahberService.logAuditEvent(
+      currentUser.id,
+      currentUser.amharicName,
+      `Added new member ${newMemberName} (${newMemberRole})`,
+      `አዲስ አባል ${newMemberAmharicName} ተመዘገበ`,
+      'member',
+      undefined,
+      `Phone: ${newMemberPhone}`
+    );
+
+    setShowAddMemberModal(false);
+    setNewMemberName('');
+    setNewMemberAmharicName('');
+    setNewMemberPhone('+251 9');
+    setNewMemberBaptismalName('');
+    setNewMemberRole('member');
+  };
+
+  // --- EDIT MEMBER SUBMIT ---
+  const handleEditMemberSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMember) return;
+
+    updateMemberDetails(editingMember.id, {
+      name: editName.trim() || editingMember.name,
+      amharicName: editAmharicName.trim() || editingMember.amharicName,
+      phone: editPhone.trim() || editingMember.phone,
+      baptismalName: editBaptismalName.trim() || editingMember.baptismalName,
+    });
+
+    mahberService.logAuditEvent(
+      currentUser.id,
+      currentUser.amharicName,
+      `Updated details for member ${editingMember.name}`,
+      `የ${editingMember.amharicName} መረጃ ተስተካከለ`,
+      'member',
+      editingMember.id
+    );
+
+    setEditingMember(null);
+  };
+
+  // --- DEACTIVATE MEMBER TOGGLE ---
+  const handleToggleDeactivate = (member: Member) => {
+    const res = deactivateMember(member.id);
+    if (!res.success && res.error) {
+      setRoleError(res.error);
+    } else {
+      mahberService.logAuditEvent(
+        currentUser.id,
+        currentUser.amharicName,
+        `${member.isDeactivated ? 'Reactivated' : 'Deactivated'} member ${member.name}`,
+        `የ${member.amharicName} ሁኔታ ወደ ${member.isDeactivated ? 'ንቁ' : 'የታገደ'} ተቀየረ`,
+        'member',
+        member.id
+      );
+    }
+  };
+
+  // Attendance metrics from actual attendance state
+  const actualPresentCount = Object.values(actualAttendance).filter((a) => a.status === 'PRESENT').length;
+  const actualLateCount = Object.values(actualAttendance).filter((a) => a.status === 'LATE').length;
+  const actualExcusedCount = Object.values(actualAttendance).filter((a) => a.status === 'EXCUSED').length;
+  const actualAbsentCount = Object.values(actualAttendance).filter((a) => a.status === 'ABSENT').length;
 
   return (
     <div className="space-y-4 pb-24 animate-fade-in">
@@ -218,10 +393,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {roleError && (
         <div className="p-3 rounded-2xl bg-[#6F2630]/20 border border-[#6F2630] text-xs text-[#E5DCD0] flex items-start gap-2 animate-fade-in">
           <AlertCircle size={18} className="text-[#D98A94] shrink-0 mt-0.5" />
-          <div>
+          <div className="flex-1">
             <div className="font-bold text-[#D98A94]">የአስተዳዳሪ ደንብ ገደብ</div>
             <p>{roleError}</p>
           </div>
+          <button
+            onClick={() => setRoleError(null)}
+            className="text-xs text-gray-400 hover:text-white"
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -286,6 +467,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           }`}
         >
           መዝሙር (Mezmur)
+        </button>
+        <button
+          onClick={() => setActiveSection('audit')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
+            activeSection === 'audit'
+              ? 'bg-[#6F2630] text-white shadow'
+              : 'bg-[#201D19] border border-[#B89A5A]/20 text-gray-400 hover:text-white'
+          }`}
+        >
+          ኦዲት መዝገብ (Audit Logs)
         </button>
       </div>
 
@@ -728,13 +919,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* SECTION: MEMBERS MANAGEMENT */}
       {activeSection === 'members' && (
         <div className="space-y-4 animate-fade-in">
-          <div className="p-3 rounded-2xl bg-[#B89A5A]/10 border border-[#B89A5A]/25 text-xs text-gray-300">
-            {t.adminMaxAdminsNotice}
+          <div className="flex items-center justify-between">
+            <div className="p-2.5 rounded-xl bg-[#B89A5A]/10 border border-[#B89A5A]/25 text-xs text-gray-300 flex-1 mr-2">
+              {t.adminMaxAdminsNotice}
+            </div>
+            <button
+              onClick={() => setShowAddMemberModal(true)}
+              className="px-3 py-2 rounded-xl bg-[#6F2630] hover:bg-[#8C3542] text-white text-xs font-bold transition flex items-center gap-1.5 shadow shrink-0"
+            >
+              <UserPlus size={14} />
+              <span>አዲስ አባል</span>
+            </button>
           </div>
 
           <div className="rounded-3xl p-4 bg-[#201D19] border border-[#B89A5A]/20 shadow-sacred space-y-3">
             <div className="flex items-center justify-between border-b border-[#B89A5A]/15 pb-2">
-              <h3 className="text-xs font-bold text-[#F5EFE3]">የ 10 አባላት ዝርዝር</h3>
+              <h3 className="text-xs font-bold text-[#F5EFE3]">የማኅበሩ አባላት ዝርዝር</h3>
               <span className="text-xs text-[#B89A5A]">
                 አስተዳዳሪዎች: {allMembers.filter((m) => m.role === 'admin' && !m.isDeactivated).length} / 2
               </span>
@@ -742,12 +942,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             <div className="divide-y divide-[#B89A5A]/10">
               {allMembers.map((member) => {
-                const memberAttendance = attendance.find((a) => a.memberId === member.id);
                 const memberContribution = contributions[member.id];
                 const isPaid = (memberContribution?.totalOutstanding || 0) === 0;
 
                 return (
-                  <div key={member.id} className="py-3 flex items-center justify-between">
+                  <div
+                    key={member.id}
+                    className={`py-3 flex items-center justify-between ${
+                      member.isDeactivated ? 'opacity-50' : ''
+                    }`}
+                  >
                     <div className="flex items-center gap-3">
                       <img
                         src={member.avatarUrl}
@@ -757,29 +961,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <div>
                         <div className="text-xs font-bold text-[#F5EFE3] flex items-center gap-1.5">
                           <span>{member.amharicName}</span>
+                          {member.baptismalName && (
+                            <span className="text-[10px] text-gray-400">({member.baptismalName})</span>
+                          )}
                           {member.role === 'admin' ? (
-                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-[#B89A5A]/20 text-[#B89A5A] font-semibold">
-                              አስተዳዳሪ
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-[#B89A5A]/20 text-[#B89A5A] font-semibold border border-[#B89A5A]/30">
+                              ⭐ አስተዳዳሪ
                             </span>
                           ) : (
                             <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/5 text-gray-400">
                               አባል
                             </span>
                           )}
+                          {member.isDeactivated && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-red-500/20 text-red-400 font-semibold">
+                              የታገደ
+                            </span>
+                          )}
                         </div>
                         <div className="text-[11px] text-gray-400">{member.phone}</div>
                         <div className="flex gap-2 text-[10px] mt-0.5">
-                          <span
-                            className={
-                              memberAttendance?.status === 'coming'
-                                ? 'text-[#315C48]'
-                                : memberAttendance?.status === 'cant_come'
-                                ? 'text-[#6F2630]'
-                                : 'text-gray-400'
-                            }
-                          >
-                            ● {memberAttendance?.status === 'coming' ? 'እመጣለሁ' : memberAttendance?.status === 'cant_come' ? 'አይመጡም' : 'አልተመለሰም'}
-                          </span>
                           <span className={isPaid ? 'text-[#315C48]' : 'text-[#B89A5A]'}>
                             ● {isPaid ? 'ተከፍሏል' : `${memberContribution?.totalOutstanding || 0} ብር ቀሪ`}
                           </span>
@@ -788,6 +989,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
 
                     <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          setEditingMember(member);
+                          setEditName(member.name);
+                          setEditAmharicName(member.amharicName);
+                          setEditPhone(member.phone);
+                          setEditBaptismalName(member.baptismalName || '');
+                        }}
+                        className="p-1.5 rounded-lg bg-white/5 border border-white/10 text-gray-300 hover:text-white"
+                        title="Edit Member"
+                      >
+                        <Edit3 size={13} />
+                      </button>
+
                       <button
                         onClick={() => handleRoleToggle(member)}
                         className={`text-[10px] px-2 py-1 rounded-lg border transition ${
@@ -799,18 +1014,188 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       >
                         {member.role === 'admin' ? 'አስተዳዳሪ' : 'አባል'}
                       </button>
+
+                      <button
+                        onClick={() => handleToggleDeactivate(member)}
+                        className={`p-1.5 rounded-lg border transition ${
+                          member.isDeactivated
+                            ? 'bg-[#315C48]/20 border-[#315C48] text-[#315C48]'
+                            : 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
+                        }`}
+                        title={member.isDeactivated ? 'Reactivate' : 'Deactivate'}
+                      >
+                        {member.isDeactivated ? <UserCheck size={13} /> : <UserX size={13} />}
+                      </button>
                     </div>
                   </div>
                 );
               })}
             </div>
           </div>
+
+          {/* Add Member Modal */}
+          {showAddMemberModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+              <div className="w-full max-w-sm bg-[#201D19] rounded-3xl border border-[#B89A5A]/30 p-5 shadow-sacred space-y-4">
+                <h4 className="text-sm font-bold text-[#F5EFE3]">አዲስ አባል ጨምር</h4>
+                {memberFormError && (
+                  <div className="p-2.5 rounded-xl bg-[#6F2630]/20 border border-[#6F2630] text-xs text-[#E5DCD0]">
+                    {memberFormError}
+                  </div>
+                )}
+                <form onSubmit={handleAddMemberSubmit} className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">ስም (English)</label>
+                    <input
+                      type="text"
+                      value={newMemberName}
+                      onChange={(e) => setNewMemberName(e.target.value)}
+                      placeholder="e.g. Yohannes Kebede"
+                      className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/30 px-3 py-2 text-xs text-white"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">ስም (አማርኛ)</label>
+                    <input
+                      type="text"
+                      value={newMemberAmharicName}
+                      onChange={(e) => setNewMemberAmharicName(e.target.value)}
+                      placeholder="ለምሳሌ: ዮሐንስ ከበደ"
+                      className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/30 px-3 py-2 text-xs text-white"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">የክርስትና ስም (አማራጭ)</label>
+                    <input
+                      type="text"
+                      value={newMemberBaptismalName}
+                      onChange={(e) => setNewMemberBaptismalName(e.target.value)}
+                      placeholder="ለምሳሌ: ወልደ ገብርኤል"
+                      className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/30 px-3 py-2 text-xs text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">ስልክ ቁጥር</label>
+                    <input
+                      type="text"
+                      value={newMemberPhone}
+                      onChange={(e) => setNewMemberPhone(e.target.value)}
+                      className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/30 px-3 py-2 text-xs text-white"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">ሚና (Role)</label>
+                    <select
+                      value={newMemberRole}
+                      onChange={(e) => setNewMemberRole(e.target.value as any)}
+                      className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/30 px-3 py-2 text-xs text-white"
+                    >
+                      <option value="member">አባል (Member)</option>
+                      <option value="admin">አስተዳዳሪ (Admin - Max 2)</option>
+                    </select>
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowAddMemberModal(false)}
+                      className="flex-1 py-2 rounded-xl border border-white/10 text-xs text-gray-400"
+                    >
+                      ሰርዝ
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 py-2 rounded-xl bg-[#6F2630] text-white text-xs font-semibold"
+                    >
+                      መዝግብ
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Edit Member Modal */}
+          {editingMember && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+              <div className="w-full max-w-sm bg-[#201D19] rounded-3xl border border-[#B89A5A]/30 p-5 shadow-sacred space-y-4">
+                <h4 className="text-sm font-bold text-[#F5EFE3]">የአባል መረጃ አርትዕ</h4>
+                <form onSubmit={handleEditMemberSubmit} className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">ስም (English)</label>
+                    <input
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/30 px-3 py-2 text-xs text-white"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">ስም (አማርኛ)</label>
+                    <input
+                      type="text"
+                      value={editAmharicName}
+                      onChange={(e) => setEditAmharicName(e.target.value)}
+                      className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/30 px-3 py-2 text-xs text-white"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">የክርስትና ስም</label>
+                    <input
+                      type="text"
+                      value={editBaptismalName}
+                      onChange={(e) => setEditBaptismalName(e.target.value)}
+                      className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/30 px-3 py-2 text-xs text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">ስልክ ቁጥር</label>
+                    <input
+                      type="text"
+                      value={editPhone}
+                      onChange={(e) => setEditPhone(e.target.value)}
+                      className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/30 px-3 py-2 text-xs text-white"
+                      required
+                    />
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditingMember(null)}
+                      className="flex-1 py-2 rounded-xl border border-white/10 text-xs text-gray-400"
+                    >
+                      ሰርዝ
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 py-2 rounded-xl bg-[#315C48] text-white text-xs font-semibold"
+                    >
+                      አስቀምጥ (Save)
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* SECTION: ATTENDANCE & PRIVATE REASONS (ADMIN ONLY ACCESS) */}
+      {/* SECTION: ATTENDANCE RECORDING & PRIVATE REASONS */}
       {activeSection === 'attendance' && (
         <div className="space-y-4 animate-fade-in">
+          {/* Toast Notification */}
+          {attendanceSavedToast && (
+            <div className="p-3 rounded-2xl bg-[#315C48] text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sacred animate-fade-in">
+              <CheckCircle2 size={18} />
+              <span>የማኅበሩ የተሳትፎ መዝገብ በተሳካ ሁኔታ ተቀምጧል! (Attendance Saved Successfully)</span>
+            </div>
+          )}
+
+          {/* Privacy Banner */}
           <div className="p-3 rounded-2xl bg-[#6F2630]/15 border border-[#6F2630]/30 flex items-start gap-2.5">
             <ShieldAlert size={18} className="text-[#D98A94] shrink-0 mt-0.5" />
             <p className="text-xs text-[#E5DCD0]">
@@ -818,9 +1203,161 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </p>
           </div>
 
+          {/* ACTUAL ATTENDANCE RECORDING SHEET */}
+          <div className="rounded-3xl p-4 bg-[#201D19] border border-[#B89A5A]/30 shadow-sacred space-y-4">
+            <div className="flex items-center justify-between border-b border-[#B89A5A]/15 pb-2">
+              <div>
+                <h3 className="text-xs font-bold text-[#F5EFE3] uppercase tracking-wider">
+                  የተሳትፎ መዝገብ (Live Gathering Attendance)
+                </h3>
+                <p className="text-[10px] text-gray-400">
+                  ለእያንዳንዱ አባል የመገኘት ሁኔታ ይምረጡና «መዝግብ» የሚለውን ይጫኑ
+                </p>
+              </div>
+              <button
+                onClick={handleSaveActualAttendance}
+                className="px-4 py-2 rounded-xl bg-[#315C48] hover:bg-[#427A60] text-white text-xs font-bold transition flex items-center gap-1.5 shadow"
+              >
+                <Check size={14} />
+                <span>መዝግብ (Save)</span>
+              </button>
+            </div>
+
+            {/* Attendance Status Summary Bar */}
+            <div className="grid grid-cols-4 gap-1.5 text-center text-xs">
+              <div className="p-2 rounded-xl bg-[#315C48]/20 border border-[#315C48]/40">
+                <div className="text-base font-bold text-[#427A60]">{actualPresentCount}</div>
+                <div className="text-[10px] text-gray-300">🟢 ተገኝቷል</div>
+              </div>
+              <div className="p-2 rounded-xl bg-[#E07A24]/20 border border-[#E07A24]/40">
+                <div className="text-base font-bold text-[#E07A24]">{actualLateCount}</div>
+                <div className="text-[10px] text-gray-300">🟠 አርፍዷል</div>
+              </div>
+              <div className="p-2 rounded-xl bg-[#B89A5A]/20 border border-[#B89A5A]/40">
+                <div className="text-base font-bold text-[#D3BA7E]">{actualExcusedCount}</div>
+                <div className="text-[10px] text-gray-300">🟡 በፈቃድ</div>
+              </div>
+              <div className="p-2 rounded-xl bg-[#6F2630]/20 border border-[#6F2630]/40">
+                <div className="text-base font-bold text-[#D98A94]">{actualAbsentCount}</div>
+                <div className="text-[10px] text-gray-300">🔴 ያልተገኘ</div>
+              </div>
+            </div>
+
+            {/* Members 4-State Toggle List */}
+            <div className="divide-y divide-[#B89A5A]/10">
+              {allMembers
+                .filter((m) => !m.isDeactivated)
+                .map((member) => {
+                  const currentStatus = actualAttendance[member.id]?.status || 'PRESENT';
+
+                  return (
+                    <div key={member.id} className="py-2.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <img
+                            src={member.avatarUrl}
+                            alt={member.name}
+                            className="w-8 h-8 rounded-full object-cover border border-[#B89A5A]/30"
+                          />
+                          <div>
+                            <div className="text-xs font-bold text-[#F5EFE3]">
+                              {member.amharicName}
+                            </div>
+                            <div className="text-[10px] text-gray-400">{member.name}</div>
+                          </div>
+                        </div>
+
+                        {/* 4 Status Buttons: Present, Excused, Late (Orange), Absent */}
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActualAttendance((prev) => ({
+                                ...prev,
+                                [member.id]: { ...prev[member.id], status: 'PRESENT' },
+                              }))
+                            }
+                            className={`px-2 py-1 rounded-lg text-[10px] font-semibold border transition ${
+                              currentStatus === 'PRESENT'
+                                ? 'bg-[#315C48] text-white border-[#427A60] shadow-sm'
+                                : 'bg-white/5 border-white/10 text-gray-400 hover:text-white'
+                            }`}
+                          >
+                            🟢 ተገኝቷል
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActualAttendance((prev) => ({
+                                ...prev,
+                                [member.id]: { ...prev[member.id], status: 'LATE' },
+                              }))
+                            }
+                            className={`px-2 py-1 rounded-lg text-[10px] font-semibold border transition ${
+                              currentStatus === 'LATE'
+                                ? 'bg-[#E07A24] text-white border-[#D97706] shadow-sm'
+                                : 'bg-white/5 border-white/10 text-gray-400 hover:text-[#E07A24]'
+                            }`}
+                          >
+                            🟠 አርፍዷል
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActualAttendance((prev) => ({
+                                ...prev,
+                                [member.id]: { ...prev[member.id], status: 'EXCUSED' },
+                              }))
+                            }
+                            className={`px-2 py-1 rounded-lg text-[10px] font-semibold border transition ${
+                              currentStatus === 'EXCUSED'
+                                ? 'bg-[#B89A5A] text-black border-[#D4AF37] font-bold shadow-sm'
+                                : 'bg-white/5 border-white/10 text-gray-400 hover:text-[#B89A5A]'
+                            }`}
+                          >
+                            🟡 በፈቃድ
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActualAttendance((prev) => ({
+                                ...prev,
+                                [member.id]: { ...prev[member.id], status: 'ABSENT' },
+                              }))
+                            }
+                            className={`px-2 py-1 rounded-lg text-[10px] font-semibold border transition ${
+                              currentStatus === 'ABSENT'
+                                ? 'bg-[#6F2630] text-white border-[#8C3542] shadow-sm'
+                                : 'bg-white/5 border-white/10 text-gray-400 hover:text-red-400'
+                            }`}
+                          >
+                            🔴 ያልተገኘ
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={handleSaveActualAttendance}
+                className="w-full py-2.5 rounded-xl bg-[#315C48] hover:bg-[#427A60] text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow"
+              >
+                <Check size={16} />
+                <span>የተሳትፎ መዝገብ አስቀምጥ (Save Attendance)</span>
+              </button>
+            </div>
+          </div>
+
+          {/* ADVANCE RSVP & PRIVATE ABSENCE REASONS REVIEW */}
           <div className="rounded-3xl p-4 bg-[#201D19] border border-[#B89A5A]/20 shadow-sacred space-y-3">
             <h3 className="text-xs font-bold text-[#F5EFE3] pb-2 border-b border-[#B89A5A]/15">
-              የአባላት ምላሽ እና የቀረቡ የግል ምክንያቶች
+              የአባላት የቅድሚያ ምላሽ እና የቀረቡ የግል ምክንያቶች
             </h3>
 
             <div className="divide-y divide-[#B89A5A]/10">
@@ -1020,6 +1557,122 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           onAddMezmur={onAddMezmur}
         />
       )}
+
+      {/* SECTION: AUDIT LOGS */}
+      {activeSection === 'audit' && (
+        <div className="space-y-4 animate-fade-in">
+          <div className="p-3 rounded-2xl bg-[#B89A5A]/10 border border-[#B89A5A]/25 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <History size={18} className="text-[#B89A5A]" />
+              <div className="text-xs font-bold text-[#F5EFE3]">የአስተዳዳሪ ኦዲት መዝገብ (Audit Trail)</div>
+            </div>
+            <span className="text-[10px] text-gray-400">ግልጽነት እና ተጠያቂነት</span>
+          </div>
+
+          {/* Search & Filter Bar */}
+          <div className="space-y-2">
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-2.5 text-gray-500" />
+              <input
+                type="text"
+                value={auditSearch}
+                onChange={(e) => setAuditSearch(e.target.value)}
+                placeholder="ኦዲት ፈልግ (Search audit logs)..."
+                className="w-full rounded-xl bg-[#201D19] border border-[#B89A5A]/25 pl-9 pr-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-[#B89A5A]"
+              />
+            </div>
+
+            <div className="flex gap-1 overflow-x-auto pb-1 no-scrollbar text-[11px]">
+              {['all', 'member', 'payment', 'attendance', 'gathering', 'mezmur', 'system'].map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setAuditFilter(cat)}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition whitespace-nowrap ${
+                    auditFilter === cat
+                      ? 'bg-[#6F2630] text-white'
+                      : 'bg-[#201D19] border border-white/5 text-gray-400 hover:text-white'
+                  }`}
+                >
+                  {cat === 'all'
+                    ? 'ሁሉም (All)'
+                    : cat === 'member'
+                    ? 'አባላት'
+                    : cat === 'payment'
+                    ? 'ክፍያ'
+                    : cat === 'attendance'
+                    ? 'ተሳትፎ'
+                    : cat === 'gathering'
+                    ? 'ማኅበር'
+                    : cat === 'mezmur'
+                    ? 'መዝሙር'
+                    : 'ስርዓት'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Audit Logs List */}
+          <div className="rounded-3xl p-4 bg-[#201D19] border border-[#B89A5A]/20 shadow-sacred space-y-3">
+            {(() => {
+              const allLogs = mahberService.getAuditLogs();
+              const filtered = allLogs.filter((log) => {
+                if (auditFilter !== 'all' && log.targetType !== auditFilter) return false;
+                if (auditSearch.trim()) {
+                  const q = auditSearch.toLowerCase();
+                  return (
+                    log.action.toLowerCase().includes(q) ||
+                    log.actionAm.toLowerCase().includes(q) ||
+                    log.adminName.toLowerCase().includes(q)
+                  );
+                }
+                return true;
+              });
+
+              if (filtered.length === 0) {
+                return (
+                  <div className="py-8 text-center text-xs text-gray-500">
+                    ምንም የኦዲት መዝገብ አልተገኘም (No audit logs match criteria)
+                  </div>
+                );
+              }
+
+              return (
+                <div className="divide-y divide-[#B89A5A]/10">
+                  {filtered.map((log) => (
+                    <div key={log.id} className="py-2.5 space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="font-bold text-[#F5EFE3]">{log.actionAm}</div>
+                        <span
+                          className={`text-[9px] px-2 py-0.2 rounded font-semibold uppercase ${
+                            log.targetType === 'member'
+                              ? 'bg-blue-500/20 text-blue-300'
+                              : log.targetType === 'payment'
+                              ? 'bg-green-500/20 text-green-300'
+                              : log.targetType === 'attendance'
+                              ? 'bg-amber-500/20 text-amber-300'
+                              : log.targetType === 'gathering'
+                              ? 'bg-purple-500/20 text-purple-300'
+                              : log.targetType === 'mezmur'
+                              ? 'bg-pink-500/20 text-pink-300'
+                              : 'bg-gray-500/20 text-gray-300'
+                          }`}
+                        >
+                          {log.targetType}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-gray-400">{log.action}</div>
+                      <div className="flex items-center justify-between text-[10px] text-gray-500 pt-0.5">
+                        <span>አድራጊ፡ {log.adminName}</span>
+                        <span>{new Date(log.createdAt).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1051,6 +1704,9 @@ const AdminMezmurSection: React.FC<AdminMezmurSectionProps> = ({
   const [newLyricsAm, setNewLyricsAm] = useState('');
   const [newLyricsEn, setNewLyricsEn] = useState('');
   const [newDuration, setNewDuration] = useState('03:30');
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [audioFileName, setAudioFileName] = useState('');
+  const [audioError, setAudioError] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
 
   // Current study summary
@@ -1058,6 +1714,22 @@ const AdminMezmurSection: React.FC<AdminMezmurSectionProps> = ({
   const participationSummary = currentMezmur
     ? mahberService.getMezmurParticipationSummary(currentMezmur.id)
     : null;
+
+  const handleAudioFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validation = mahberService.validateAudioFileSize(file);
+    if (!validation.valid) {
+      setAudioError(language === 'am' ? (validation.errorAm || 'የድምጽ ፋይል መጠን ከ 20MB ማለፍ የለበትም') : (validation.errorEn || 'File size exceeds 20MB'));
+      setAudioFile(null);
+      setAudioFileName('');
+    } else {
+      setAudioError(null);
+      setAudioFile(file);
+      setAudioFileName(file.name);
+    }
+  };
 
   const handleReviewSuggestion = (suggestionId: string, decision: 'approved' | 'rejected') => {
     const result = mahberService.reviewSuggestion(suggestionId, currentUser.id, decision);
@@ -1067,6 +1739,7 @@ const AdminMezmurSection: React.FC<AdminMezmurSectionProps> = ({
   const handleAddMezmurSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitleAm.trim()) return;
+    if (audioError) return;
 
     mahberService.addMezmur({
       titleAm: newTitleAm.trim(),
@@ -1076,6 +1749,7 @@ const AdminMezmurSection: React.FC<AdminMezmurSectionProps> = ({
       lyricsAm: newLyricsAm.trim() || undefined,
       lyricsEn: newLyricsEn.trim() || undefined,
       duration: newDuration || '03:30',
+      audioUrl: audioFileName ? `https://example.com/audio/${encodeURIComponent(audioFileName)}` : undefined,
       status: 'library',
       dateAdded: new Date().toISOString().split('T')[0],
       voicesCount: 4,
@@ -1094,6 +1768,9 @@ const AdminMezmurSection: React.FC<AdminMezmurSectionProps> = ({
     setNewTitleEn('');
     setNewLyricsAm('');
     setNewLyricsEn('');
+    setAudioFile(null);
+    setAudioFileName('');
+    setAudioError(null);
     setShowAddForm(false);
   };
 
@@ -1262,9 +1939,34 @@ const AdminMezmurSection: React.FC<AdminMezmurSectionProps> = ({
                 onChange={(e) => setNewLyricsEn(e.target.value)}
                 className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/25 px-3 py-2 text-xs text-white"
               />
+
+              {/* Audio Upload with <= 20MB validation */}
+              <div className="space-y-1.5 p-3 rounded-2xl bg-[#151311] border border-[#B89A5A]/20">
+                <label className="block text-[11px] font-semibold text-[#B89A5A]">
+                  የድምጽ ፋይል ይምረጡ (ከ 20MB በታች / Audio File ≤ 20MB)
+                </label>
+                <input
+                  type="file"
+                  accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg"
+                  onChange={handleAudioFileChange}
+                  className="block w-full text-xs text-gray-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#B89A5A]/20 file:text-[#D3BA7E] hover:file:bg-[#B89A5A]/30 cursor-pointer"
+                />
+                {audioFileName && (
+                  <div className="text-[11px] text-green-400 font-medium">
+                    ✓ የተመረጠ ፋይል: {audioFileName}
+                  </div>
+                )}
+                {audioError && (
+                  <div className="text-[11px] text-red-400 bg-red-950/40 p-2 rounded-xl border border-red-500/30">
+                    ⚠ {audioError}
+                  </div>
+                )}
+              </div>
+
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-[#315C48] text-white text-xs font-bold hover:bg-[#427A60] transition"
+                className="w-full py-2.5 rounded-xl bg-[#315C48] text-white text-xs font-bold hover:bg-[#427A60] transition disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={Boolean(audioError)}
               >
                 + መዝሙር ወደ ማከማቻ አክል (Save to Library)
               </button>
