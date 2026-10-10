@@ -14,6 +14,11 @@ import {
   ContributionPeriod,
   PaymentEntry,
   GatheringPhoto,
+  AdminRole,
+  PaintingRotationState,
+  SpendingProposal,
+  TransportCollection,
+  PenaltyRecord,
 } from '../../types';
 import { mahberService } from '../../services/mahberService';
 import { getNextMahberProjectedDate } from '../../utils/ethiopianCalendar';
@@ -46,6 +51,7 @@ import {
   Volume2,
   Upload,
   History,
+  LogOut,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -57,9 +63,12 @@ interface AdminDashboardProps {
   onRecordPayment: (memberId: string, amount: number, note?: string) => void;
   onSetCurrentMezmur: (mezmurId: string) => void;
   onAddMezmur: (titleAm: string, titleEn: string, categoryAm: string) => void;
+  onArchiveMezmur?: (mezmurId: string) => void;
   onUpdateGathering: (gathering: Gathering) => void;
   onCreateGathering?: (gathering: Omit<Gathering, 'id'>) => void;
   onCompleteGathering?: (gatheringId: string) => void;
+  onRefreshHistory?: () => void;
+  onLockAdmin?: () => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -71,23 +80,56 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onRecordPayment,
   onSetCurrentMezmur,
   onAddMezmur,
+  onArchiveMezmur,
   onUpdateGathering,
   onCreateGathering,
   onCompleteGathering,
+  onRefreshHistory,
+  onLockAdmin,
 }) => {
   const { t, language } = useLanguage();
   const {
     currentUser,
     allMembers,
+    signOut,
     updateMemberRole,
+    assignMemberAdminRoles,
     addMember,
     updateMemberDetails,
     deactivateMember,
+    isSuperAdmin,
+    isFinanceAdmin,
+    isAttendanceAdmin,
   } = useAuth();
 
   const [activeSection, setActiveSection] = useState<
-    'overview' | 'gatherings' | 'members' | 'attendance' | 'payments' | 'mezmur' | 'audit'
+    'overview' | 'gatherings' | 'members' | 'attendance' | 'payments' | 'rotation' | 'fund' | 'mezmur' | 'audit'
   >('overview');
+
+  // Invitation Generation State
+  const [generatedInviteMember, setGeneratedInviteMember] = useState<{ memberName: string; code: string } | null>(null);
+
+  // Rotation & Swap Modal State
+  const [rotationData, setRotationData] = useState<PaintingRotationState | null>(() => mahberService.getPaintingRotation());
+  const [selectedSwapHostId, setSelectedSwapHostId] = useState<string>('');
+  const [swapReason, setSwapReason] = useState<string>('');
+  const [swapSuccessToast, setSwapSuccessToast] = useState(false);
+
+  // Transport Collection Form State
+  const [transportTitle, setTransportTitle] = useState('');
+  const [transportCostPerPerson, setTransportCostPerPerson] = useState('50');
+  const [transportTargetDate, setTransportTargetDate] = useState('27 ጥቅምት 2019');
+  const [transportDescription, setTransportDescription] = useState('');
+
+  // Proposal Creation State
+  const [proposalTitle, setProposalTitle] = useState('');
+  const [proposalAmount, setProposalAmount] = useState('1000');
+  const [proposalCategory, setProposalCategory] = useState<'charity' | 'hospitality' | 'sacred_art' | 'bereavement' | 'event' | 'transport_subsidy' | 'other'>('charity');
+  const [proposalJustification, setProposalJustification] = useState('');
+
+  // Arrival Time & Lateness State for Live Attendance
+  const [memberArrivalTimes, setMemberArrivalTimes] = useState<Record<string, string>>({});
+  const [latenessPenaltyToast, setLatenessPenaltyToast] = useState<string | null>(null);
 
   // Payment Recording Modal State
   const [selectedMemberForPayment, setSelectedMemberForPayment] = useState<string | null>(null);
@@ -193,6 +235,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       alert(language === 'am' ? 'የክፍያ መጠን ከ 0 በላይ መሆን አለበት።' : 'Payment amount must be greater than 0.');
       return;
     }
+    // Use sequentially allocated advance payment if > 100 ETB
+    if (amount >= 100) {
+      mahberService.recordAdvancePayment(selectedMemberForPayment, amount, paymentNote || 'መዋጮ ክፍያ');
+    }
     onRecordPayment(selectedMemberForPayment, amount, paymentNote);
     const targetMember = allMembers.find((m) => m.id === selectedMemberForPayment);
     if (targetMember) {
@@ -278,8 +324,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       currentUser.id,
       currentUser.amharicName
     );
+    if (onRefreshHistory) {
+      onRefreshHistory();
+    }
     setAttendanceSavedToast(true);
-    setTimeout(() => setAttendanceSavedToast(false), 2500);
+    setTimeout(() => setAttendanceSavedToast(false), 3000);
   };
 
   // --- ADD MEMBER SUBMIT ---
@@ -459,6 +508,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           ክፍያዎች (Payments)
         </button>
         <button
+          onClick={() => setActiveSection('rotation')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
+            activeSection === 'rotation'
+              ? 'bg-[#6F2630] text-white shadow'
+              : 'bg-[#201D19] border border-[#B89A5A]/20 text-gray-400 hover:text-white'
+          }`}
+        >
+          የስዕል ተራ እና ዝውውር (Rotation)
+        </button>
+        <button
+          onClick={() => setActiveSection('fund')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
+            activeSection === 'fund'
+              ? 'bg-[#6F2630] text-white shadow'
+              : 'bg-[#201D19] border border-[#B89A5A]/20 text-gray-400 hover:text-white'
+          }`}
+        >
+          የጋራ ፈንድ እና ትራንስፖርት (Fund & Proposals)
+        </button>
+        <button
           onClick={() => setActiveSection('mezmur')}
           className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
             activeSection === 'mezmur'
@@ -477,6 +546,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           }`}
         >
           ኦዲት መዝገብ (Audit Logs)
+        </button>
+        {onLockAdmin && (
+          <button
+            onClick={onLockAdmin}
+            className="px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition bg-[#B89A5A]/20 border border-[#B89A5A]/60 text-[#F5EFE3] hover:bg-[#B89A5A]/40 flex items-center gap-1.5"
+          >
+            <Lock size={13} />
+            <span>{language === 'am' ? 'አስተዳዳሪን ቆልፍ (Lock)' : 'Lock Admin'}</span>
+          </button>
+        )}
+        <button
+          onClick={() => {
+            if (window.confirm(language === 'am' ? 'በእርግጥ መውጣት ይፈልጋሉ?' : 'Are you sure you want to sign out?')) {
+              signOut();
+            }
+          }}
+          className="px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition bg-[#6F2630]/20 border border-[#6F2630]/60 text-[#D98A94] hover:bg-[#6F2630] hover:text-white flex items-center gap-1.5"
+        >
+          <LogOut size={13} />
+          <span>{language === 'am' ? 'ውጣ (Sign Out)' : 'Sign Out'}</span>
         </button>
       </div>
 
@@ -1016,6 +1105,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </button>
 
                       <button
+                        onClick={() => {
+                          const invite = mahberService.createInvitation(member.id, currentUser.id);
+                          setGeneratedInviteMember({ memberName: member.amharicName, code: invite.code });
+                        }}
+                        className="p-1.5 rounded-lg bg-[#B89A5A]/20 border border-[#B89A5A]/40 text-[#D3BA7E] hover:bg-[#B89A5A]/30 transition"
+                        title="የመግቢያ ኮድ ፍጠር (Generate Invite Code)"
+                      >
+                        <Lock size={13} />
+                      </button>
+
+                      <button
                         onClick={() => handleToggleDeactivate(member)}
                         className={`p-1.5 rounded-lg border transition ${
                           member.isDeactivated
@@ -1032,6 +1132,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               })}
             </div>
           </div>
+
+          {/* Generated Invite Code Popup Modal */}
+          {generatedInviteMember && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+              <div className="w-full max-w-sm bg-[#201D19] rounded-3xl border border-[#B89A5A]/40 p-5 shadow-sacred space-y-4 text-center">
+                <div className="w-12 h-12 rounded-full bg-[#B89A5A]/20 text-[#B89A5A] flex items-center justify-center mx-auto">
+                  <Lock size={24} />
+                </div>
+                <div>
+                  <h4 className="text-base font-bold text-[#F5EFE3]">የመግቢያ ኮድ ተፈጥሯል</h4>
+                  <p className="text-xs text-gray-400 mt-1">
+                    ለ{generatedInviteMember.memberName} የተዘጋጀ ባለአንድ-ጊዜ የመግቢያ ኮድ:
+                  </p>
+                </div>
+                <div className="p-3 rounded-2xl bg-[#151311] border border-[#B89A5A]/40 font-mono text-lg font-bold tracking-widest text-[#B89A5A]">
+                  {generatedInviteMember.code}
+                </div>
+                <p className="text-[11px] text-gray-400 italic">
+                  ይህን ኮድ ለአባሉ ያጋሩ። ኮዱ በመግቢያ ገጽ ላይ "ባለአንድ-ጊዜ ኮድ (Invite Code)" በሚለው አማራጭ መለያቸውን ያነቃቃል።
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setGeneratedInviteMember(null)}
+                  className="w-full py-2.5 rounded-xl bg-[#6F2630] hover:bg-[#8C3542] text-white text-xs font-bold transition"
+                >
+                  ዝጋ (Close)
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Add Member Modal */}
           {showAddMemberModal && (
@@ -1189,9 +1319,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="space-y-4 animate-fade-in">
           {/* Toast Notification */}
           {attendanceSavedToast && (
-            <div className="p-3 rounded-2xl bg-[#315C48] text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sacred animate-fade-in">
-              <CheckCircle2 size={18} />
-              <span>የማኅበሩ የተሳትፎ መዝገብ በተሳካ ሁኔታ ተቀምጧል! (Attendance Saved Successfully)</span>
+            <div className="p-3 rounded-2xl bg-[#315C48] text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sacred animate-fade-in text-center">
+              <CheckCircle2 size={18} className="shrink-0" />
+              <span>
+                {language === 'am'
+                  ? 'የተሳትፎ መዝገብ ተቀምጧል እንዲሁም ወደ ታሪክ መዝገብ ገብቷል! አባላት ማየት ይችላሉ።'
+                  : 'Attendance saved and recorded into History! All members can now view it.'}
+              </span>
+            </div>
+          )}
+
+          {latenessPenaltyToast && (
+            <div className="p-3 rounded-2xl bg-[#E07A24] text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sacred animate-fade-in">
+              <AlertCircle size={18} />
+              <span>{latenessPenaltyToast}</span>
             </div>
           )}
 
@@ -1337,6 +1478,77 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             🔴 ያልተገኘ
                           </button>
                         </div>
+                      </div>
+
+                      {/* 30-Min Lateness Penalty & Absence Trigger Controls */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 pl-10 border-t border-white/5 text-[11px]">
+                        <div className="flex items-center gap-1.5">
+                          <Clock size={12} className="text-[#B89A5A]" />
+                          <span className="text-gray-400">የደረሰበት ሰዓት:</span>
+                          <input
+                            type="time"
+                            value={memberArrivalTimes[member.id] || ''}
+                            onChange={(e) => setMemberArrivalTimes(prev => ({ ...prev, [member.id]: e.target.value }))}
+                            className="bg-[#151311] border border-white/10 rounded px-1.5 py-0.5 text-xs text-white"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const arrivalTime = memberArrivalTimes[member.id];
+                              if (!arrivalTime) {
+                                alert(language === 'am' ? 'እባክዎ መጀመሪያ የደረሰበትን ሰዓት ያስገቡ።' : 'Please specify arrival time.');
+                                return;
+                              }
+                              const gDate = gathering?.gregDateRaw ? gathering.gregDateRaw.split('T')[0] : new Date().toISOString().split('T')[0];
+                              const arrivalIso = `${gDate}T${arrivalTime}:00`;
+                              const schedStart = gathering?.gregDateRaw || `${gDate}T18:00:00`;
+                              const penalty = mahberService.recordLateArrivalWithGracePeriod(
+                                member.id,
+                                gathering?.id || 'default',
+                                schedStart,
+                                arrivalIso
+                              );
+                              if (penalty) {
+                                setActualAttendance(prev => ({ ...prev, [member.id]: { ...prev[member.id], status: 'LATE' } }));
+                                setLatenessPenaltyToast(`${member.amharicName} ከ30 ደቂቃ በላይ አርፍዷል! 100 ብር ቅጣት ተመዝግቧል።`);
+                              } else {
+                                setActualAttendance(prev => ({ ...prev, [member.id]: { ...prev[member.id], status: 'PRESENT' } }));
+                                setLatenessPenaltyToast(`${member.amharicName} በሰዓቱ (ወይም በምህረት ጊዜ ውስጥ) ደርሷል - ምንም ቅጣት የለም።`);
+                              }
+                              setTimeout(() => setLatenessPenaltyToast(null), 3500);
+                            }}
+                            className="px-2 py-0.5 rounded bg-[#E07A24]/20 border border-[#E07A24]/40 text-[#E07A24] font-medium hover:bg-[#E07A24]/30 transition"
+                          >
+                            ማርፈድ ፈትሽ (Check &gt;30m)
+                          </button>
+                        </div>
+
+                        {currentStatus === 'ABSENT' && (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                mahberService.recordAbsencePenalty(member.id, gathering?.id || 'default', false);
+                                setLatenessPenaltyToast(`ለ${member.amharicName} ያልተፈቀደ መቅረት 200 ብር ቅጣት ተመዝግቧል።`);
+                                setTimeout(() => setLatenessPenaltyToast(null), 3500);
+                              }}
+                              className="px-2 py-0.5 rounded bg-[#6F2630]/30 border border-[#6F2630] text-[#D98A94] font-medium hover:bg-[#6F2630]/50 transition"
+                            >
+                              200 ብር ቅጣት መዝግብ (Unexcused)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                mahberService.recordAbsencePenalty(member.id, gathering?.id || 'default', true, 'በአስተዳዳሪ የተፈቀደ ይቅርታ');
+                                setLatenessPenaltyToast(`ለ${member.amharicName} የቀረበው ይቅርታ ተቀባይነት አግኝቷል (0 ብር)።`);
+                                setTimeout(() => setLatenessPenaltyToast(null), 3500);
+                              }}
+                              className="px-2 py-0.5 rounded bg-[#315C48]/30 border border-[#315C48] text-[#427A60] font-medium hover:bg-[#315C48]/50 transition"
+                            >
+                              በይቅርታ እለፍ (Excused)
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -1549,12 +1761,298 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
+      {/* SECTION: SACRED PAINTING ROTATION & HOSTING SWAPS */}
+      {activeSection === 'rotation' && (
+        <div className="space-y-4 animate-fade-in">
+          {swapSuccessToast && (
+            <div className="p-3 rounded-2xl bg-[#315C48] text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sacred animate-fade-in">
+              <CheckCircle2 size={18} />
+              <span>የተረኝነት ዝውውር በተሳካ ሁኔታ ተመዝግቧል!</span>
+            </div>
+          )}
+
+          <div className="p-4 rounded-3xl bg-[#201D19] border border-[#B89A5A]/30 shadow-sacred space-y-4">
+            <div className="flex items-center justify-between border-b border-[#B89A5A]/20 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-[#F5EFE3]">የቅዱሳን ሥዕል ተራ እና ዝውውር (Sacred Painting Rotation)</h3>
+                <p className="text-xs text-gray-400">ወቅታዊ ተረኛ፣ ቀጣይ አስተናጋጅ እና የፈቃድ ዝውውር መዝገብ</p>
+              </div>
+              <span className="text-xs px-2.5 py-1 rounded-xl bg-[#B89A5A]/20 text-[#B89A5A] font-semibold border border-[#B89A5A]/30">
+                27ኛው ቀን
+              </span>
+            </div>
+
+            {/* Current State Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-3 rounded-2xl bg-[#2A241E] border border-[#B89A5A]/20">
+                <div className="text-[10px] text-gray-400 uppercase tracking-wider">የአሁን ሥዕል ያዥ (Current Holder)</div>
+                <div className="text-sm font-bold text-[#F5EFE3] mt-1">
+                  {allMembers.find(m => m.id === rotationData?.currentHolderId)?.amharicName || 'ያልተገለጸ'}
+                </div>
+                <div className="text-[10px] text-[#B89A5A] mt-0.5">የቅዱሳን ሥዕል በቤታቸው ይገኛል</div>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-[#2A241E] border border-[#B89A5A]/20">
+                <div className="text-[10px] text-gray-400 uppercase tracking-wider">ቀጣይ ተረኛ (Scheduled Host)</div>
+                <div className="text-sm font-bold text-[#F5EFE3] mt-1">
+                  {allMembers.find(m => m.id === rotationData?.nextAssignedHostId)?.amharicName || 'ያልተገለጸ'}
+                </div>
+                <div className="text-[10px] text-gray-400 mt-0.5">በመደበኛ ቅደም ተከተል መሠረት</div>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-[#2A241E] border border-[#B89A5A]/20">
+                <div className="text-[10px] text-gray-400 uppercase tracking-wider">የሚቀጥለው ማኅበር አስተናጋጅ</div>
+                <div className="text-sm font-bold text-[#315C48] mt-1">
+                  {allMembers.find(m => m.id === (rotationData?.swaps?.[0]?.substituteHostId || rotationData?.scheduledHostId || rotationData?.nextAssignedHostId))?.amharicName || 'ያልተገለጸ'}
+                </div>
+                <div className="text-[10px] text-gray-400 mt-0.5">
+                  {rotationData?.swaps && rotationData.swaps.length > 0 ? 'በዝውውር የተረከቡ' : 'መደበኛ ተረኛ'}
+                </div>
+              </div>
+            </div>
+
+            {/* Non-destructive Hosting Swap Form */}
+            <div className="p-4 rounded-2xl bg-[#1A1714] border border-[#B89A5A]/20 space-y-3">
+              <h4 className="text-xs font-bold text-[#B89A5A] uppercase tracking-wide">
+                የተረኝነት ጊዜያዊ ዝውውር መዝግብ (Record Hosting Swap)
+              </h4>
+              <p className="text-[11px] text-gray-400">
+                አስተናጋጁ በግል ምክንያት መቀበል በማይችልበት ጊዜ፣ ሥርዓታዊ ቅደም ተከተሉ ሳይዛባ ለሌላ አባል በጊዜያዊነት ማስተላለፍ።
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="block text-[11px] text-gray-400 mb-1">ጊዜያዊ ተረካቢ አባል</label>
+                  <select
+                    value={selectedSwapHostId}
+                    onChange={(e) => setSelectedSwapHostId(e.target.value)}
+                    className="w-full rounded-xl bg-[#201D19] border border-[#B89A5A]/30 px-3 py-2 text-xs text-white"
+                  >
+                    <option value="">አባል ይምረጡ...</option>
+                    {allMembers
+                      .filter(m => !m.isDeactivated && m.id !== rotationData?.nextAssignedHostId)
+                      .map(m => (
+                        <option key={m.id} value={m.id}>{m.amharicName} ({m.name})</option>
+                      ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-400 mb-1">የዝውውር ምክንያት</label>
+                  <input
+                    type="text"
+                    value={swapReason}
+                    onChange={(e) => setSwapReason(e.target.value)}
+                    placeholder="ለምሳሌ፡ ጉዞ፣ ህመም ወይም አስገዳጅ ሁኔታ"
+                    className="w-full rounded-xl bg-[#201D19] border border-[#B89A5A]/30 px-3 py-2 text-xs text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!selectedSwapHostId) {
+                      alert(language === 'am' ? 'እባክዎ ጊዜያዊ ተረካቢ አባል ይምረጡ' : 'Please select a temporary host');
+                      return;
+                    }
+                    const updated = mahberService.recordHostingSwap(
+                      gathering?.id || 'gathering-current',
+                      rotationData?.nextAssignedHostId || 'mem_1',
+                      selectedSwapHostId,
+                      swapReason || 'በአስተዳዳሪ የተመዘገበ ዝውውር',
+                      currentUser.id
+                    );
+                    setRotationData(updated);
+                    setSwapSuccessToast(true);
+                    setSelectedSwapHostId('');
+                    setSwapReason('');
+                    setTimeout(() => setSwapSuccessToast(false), 3000);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-[#6F2630] hover:bg-[#8C3542] text-white text-xs font-bold transition shadow"
+                >
+                  ዝውውሩን አጽድቅ (Confirm Swap)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SECTION: SHARED FUND, PROPOSALS & TRANSPORT */}
+      {activeSection === 'fund' && (
+        <div className="space-y-4 animate-fade-in">
+          {/* Fund Balance Summary Banner */}
+          {(() => {
+            const fundBalance = mahberService.getSharedFundBalance();
+            return (
+              <div className="p-4 rounded-3xl bg-[#201D19] border border-[#B89A5A]/30 shadow-sacred flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] text-gray-400 uppercase tracking-wider">የማኅበሩ የጋራ ፈንድ ቀሪ ሒሳብ</div>
+                  <div className="text-2xl font-bold text-[#F5EFE3] mt-1">{fundBalance.toLocaleString()} <span className="text-sm font-normal text-[#B89A5A]">ብር</span></div>
+                  <div className="text-[10px] text-gray-400 mt-0.5">የተጣራ ገቢ ሲቀነስ ወጪ (Net Income - Expenses)</div>
+                </div>
+                <div className="p-3 rounded-2xl bg-[#315C48]/20 border border-[#315C48]/40 text-[#427A60]">
+                  <DollarSign size={24} />
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* New Spending Proposal Card */}
+          <div className="p-4 rounded-3xl bg-[#201D19] border border-[#B89A5A]/20 space-y-3">
+            <h4 className="text-xs font-bold text-[#F5EFE3] uppercase tracking-wide border-b border-[#B89A5A]/15 pb-2">
+              አዲስ የጋራ ወጪ ጥያቄ አቅርብ (Propose Spending with Majority Vote)
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[11px] text-gray-400 mb-1">የወጪው ርዕስ</label>
+                <input
+                  type="text"
+                  value={proposalTitle}
+                  onChange={(e) => setProposalTitle(e.target.value)}
+                  placeholder="ለምሳሌ፡ የታመመ ወንድም መጠየቂያ"
+                  className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/30 px-3 py-2 text-xs text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] text-gray-400 mb-1">መጠን (ብር)</label>
+                <input
+                  type="number"
+                  value={proposalAmount}
+                  onChange={(e) => setProposalAmount(e.target.value)}
+                  className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/30 px-3 py-2 text-xs text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] text-gray-400 mb-1">ምድብ</label>
+                <select
+                  value={proposalCategory}
+                  onChange={(e) => setProposalCategory(e.target.value as any)}
+                  className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/30 px-3 py-2 text-xs text-white"
+                >
+                  <option value="charity">ምጽዋት እና መረዳጃ (Charity)</option>
+                  <option value="bereavement">የሐዘን መጽናኛ (Bereavement)</option>
+                  <option value="hospitality">የማኅበር ግብዣ ድጋፍ (Hospitality)</option>
+                  <option value="sacred_art">የቅዱሳን ሥዕላት እንክብካቤ (Sacred Art)</option>
+                  <option value="event">በዓላት እና ዝግጅቶች (Event)</option>
+                  <option value="transport_subsidy">የትራንስፖርት ድጎማ (Transport)</option>
+                  <option value="other">ሌሎች (Other)</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] text-gray-400 mb-1">ምክንያት እና ማብራሪያ (Justification)</label>
+              <textarea
+                value={proposalJustification}
+                onChange={(e) => setProposalJustification(e.target.value)}
+                rows={2}
+                placeholder="ይህ ወጪ ለማኅበሩ ለምን አስፈለገ? ዝርዝር ማብራሪያ ይጻፉ..."
+                className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/30 px-3 py-2 text-xs text-white"
+              />
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!proposalTitle.trim()) {
+                    alert(language === 'am' ? 'እባክዎ የጥያቄውን ርዕስ ያስገቡ' : 'Please provide proposal title');
+                    return;
+                  }
+                  mahberService.createSpendingProposal({
+                    title: proposalTitle,
+                    titleAm: proposalTitle,
+                    description: proposalJustification,
+                    amount: parseFloat(proposalAmount) || 0,
+                    category: proposalCategory,
+                    proposedBy: currentUser.id,
+                    proposedByName: currentUser.amharicName,
+                  });
+                  alert(language === 'am' ? 'የወጪ ጥያቄው ለድምጽ አሰጣጥ ቀርቧል!' : 'Proposal created and open for voting!');
+                  setProposalTitle('');
+                  setProposalJustification('');
+                }}
+                className="px-4 py-2 rounded-xl bg-[#315C48] hover:bg-[#427A60] text-white text-xs font-bold transition shadow"
+              >
+                ለአባላት ድምፅ አቅርብ (Submit for Voting)
+              </button>
+            </div>
+          </div>
+
+          {/* Transport Collection Card */}
+          <div className="p-4 rounded-3xl bg-[#201D19] border border-[#B89A5A]/20 space-y-3">
+            <h4 className="text-xs font-bold text-[#F5EFE3] uppercase tracking-wide border-b border-[#B89A5A]/15 pb-2">
+              የትራንስፖርት መዋጮ ማደራጃ (Transport Collections)
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[11px] text-gray-400 mb-1">የርዕስ ስም</label>
+                <input
+                  type="text"
+                  value={transportTitle}
+                  onChange={(e) => setTransportTitle(e.target.value)}
+                  placeholder="ለምሳሌ፡ የጥቅምት ማኅበር ታክሲ/ሚኒባስ"
+                  className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/30 px-3 py-2 text-xs text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] text-gray-400 mb-1">የአንድ ሰው ድርሻ (ብር)</label>
+                <input
+                  type="number"
+                  value={transportCostPerPerson}
+                  onChange={(e) => setTransportCostPerPerson(e.target.value)}
+                  className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/30 px-3 py-2 text-xs text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] text-gray-400 mb-1">የመሰብሰቢያ ቀን</label>
+                <input
+                  type="text"
+                  value={transportTargetDate}
+                  onChange={(e) => setTransportTargetDate(e.target.value)}
+                  className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/30 px-3 py-2 text-xs text-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!transportTitle.trim()) {
+                    alert(language === 'am' ? 'እባክዎ የትራንስፖርቱን ርዕስ ያስገቡ' : 'Please provide transport title');
+                    return;
+                  }
+                  mahberService.createTransportCollection(
+                    gathering?.id || 'gathering-current',
+                    transportTitle,
+                    transportTitle,
+                    gathering?.location || 'ማኅበር መገኛ',
+                    parseFloat(transportCostPerPerson) || 50,
+                    transportDescription
+                  );
+                  alert(language === 'am' ? 'የትራንስፖርት መዋጮው ተመዝግቧል!' : 'Transport collection created!');
+                  setTransportTitle('');
+                  setTransportDescription('');
+                }}
+                className="px-4 py-2 rounded-xl bg-[#6F2630] hover:bg-[#8C3542] text-white text-xs font-bold transition shadow"
+              >
+                የትራንስፖርት መዋጮ ጀምር (Create Transport Collection)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* SECTION: MEZMUR MANAGEMENT */}
       {activeSection === 'mezmur' && (
         <AdminMezmurSection
           mezmurs={mezmurs}
           onSetCurrentMezmur={onSetCurrentMezmur}
           onAddMezmur={onAddMezmur}
+          onArchiveMezmur={onArchiveMezmur}
         />
       )}
 
@@ -1684,12 +2182,14 @@ interface AdminMezmurSectionProps {
   mezmurs: Mezmur[];
   onSetCurrentMezmur: (mezmurId: string) => void;
   onAddMezmur: (titleAm: string, titleEn: string, categoryAm: string) => void;
+  onArchiveMezmur?: (mezmurId: string) => void;
 }
 
 const AdminMezmurSection: React.FC<AdminMezmurSectionProps> = ({
   mezmurs,
   onSetCurrentMezmur,
   onAddMezmur,
+  onArchiveMezmur,
 }) => {
   const { language } = useLanguage();
   const { currentUser } = useAuth();
@@ -1987,6 +2487,19 @@ const AdminMezmurSection: React.FC<AdminMezmurSectionProps> = ({
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-gray-400">
                     {m.status === 'current_study' ? 'የአሁን ጥናት' : 'በማከማቻ'}
                   </span>
+                  {m.status !== 'current_study' && onArchiveMezmur && (
+                    <button
+                      onClick={() => {
+                        if (window.confirm(language === 'am' ? `"${m.titleAm}" ከመዝሙር ማከማቻው ይወገድ?` : `Archive "${m.titleEn}" from library?`)) {
+                          onArchiveMezmur(m.id);
+                        }
+                      }}
+                      className="p-1 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition"
+                      title={language === 'am' ? 'አስወግድ / ሰርዝ' : 'Archive / Remove'}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

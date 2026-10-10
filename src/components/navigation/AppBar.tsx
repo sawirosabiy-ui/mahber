@@ -19,7 +19,7 @@ export const AppBar: React.FC<AppBarProps> = ({
   const { currentUser } = useAuth();
 
   return (
-    <header className="sticky top-0 z-40 w-full px-4 py-2.5 bg-[#151311]/90 dark:bg-[#151311]/90 light:bg-[#F5EFE7]/90 backdrop-blur-md border-b border-[#B89A5A]/15 flex items-center justify-between">
+    <header className="sticky top-0 z-40 w-full px-4 py-2.5 bg-[#151311]/90 dark:bg-[#151311]/90 light:bg-[#F7F7F3]/90 backdrop-blur-md border-b border-[#B89A5A]/15 flex items-center justify-between">
       {/* Brand Identity */}
       <div className="flex items-center gap-2.5">
         <div className="w-8 h-8 rounded-full bg-[#B89A5A]/15 border border-[#B89A5A]/30 flex items-center justify-center text-[#B89A5A]">

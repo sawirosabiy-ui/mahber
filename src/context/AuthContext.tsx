@@ -1,18 +1,27 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Member, Role } from '../types';
+import { Member, Role, AdminRole } from '../types';
 import { INITIAL_MEMBERS } from '../data/mockData';
 import { supabase, isLiveSupabaseConfigured } from '../lib/supabase';
+import { mahberService } from '../services/mahberService';
 
 interface AuthContextType {
   currentUser: Member;
   allMembers: Member[];
   isAdmin: boolean;
+  isSuperAdmin: boolean;
+  isManagementAdmin: boolean;
+  isFinanceAdmin: boolean;
+  isAttendanceAdmin: boolean;
+  isMezmurAdmin: boolean;
+  hasRole: (role: AdminRole) => boolean;
   isAuthenticated: boolean;
   loginWithCredentials: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  activateAccountWithInvite: (inviteCode: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
   switchUser: (memberId: string) => void;
   updateMemberRole: (memberId: string, newRole: Role) => { success: boolean; error?: string };
+  assignMemberAdminRoles: (memberId: string, roles: AdminRole[]) => { success: boolean; error?: string };
   updateMemberDetails: (memberId: string, updates: Partial<Member>) => void;
   addMember: (member: Omit<Member, 'id'>) => { success: boolean; error?: string };
   deactivateMember: (memberId: string) => { success: boolean; error?: string };
@@ -25,7 +34,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const saved = localStorage.getItem('mahber_members');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        // Ensure we load the canonical 11 members with real names
+        if (
+          Array.isArray(parsed) &&
+          parsed.length === 11 &&
+          parsed.some((m) => m.name.includes('Sawiros'))
+        ) {
+          return parsed;
+        }
+        return INITIAL_MEMBERS;
       } catch {
         return INITIAL_MEMBERS;
       }
@@ -75,7 +93,43 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const currentUser = members.find((m) => m.id === currentUserId) || members[0];
-  const isAdmin = currentUser.role === 'admin';
+
+  // Fine-grained Role-Based Access Control
+  const isSuperAdmin = (currentUser.roles || []).includes('super_admin') || currentUser.id === 'm1';
+  const isFinanceAdmin = isSuperAdmin || (currentUser.roles || []).includes('finance_admin');
+  const isAttendanceAdmin = isSuperAdmin || (currentUser.roles || []).includes('attendance_admin');
+  const isMezmurAdmin = isSuperAdmin || (currentUser.roles || []).includes('mezmur_admin');
+  const isManagementAdmin = isSuperAdmin || (currentUser.roles || []).includes('management_admin');
+  const isAdmin =
+    isSuperAdmin ||
+    isFinanceAdmin ||
+    isAttendanceAdmin ||
+    isMezmurAdmin ||
+    isManagementAdmin ||
+    currentUser.role === 'admin';
+
+  const hasRole = (role: AdminRole): boolean => {
+    if (isSuperAdmin) return true;
+    return (currentUser.roles || []).includes(role);
+  };
+
+  const activateAccountWithInvite = async (
+    inviteCode: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    const res = mahberService.redeemInvitation(inviteCode);
+    if (!res.success || !res.memberId) {
+      return { success: false, error: res.error || 'Invalid or expired invitation code' };
+    }
+
+    const target = members.find((m) => m.id === res.memberId);
+    if (!target) {
+      return { success: false, error: 'Member not found for invitation code' };
+    }
+
+    setCurrentUserId(target.id);
+    setIsAuthenticated(true);
+    return { success: true };
+  };
 
   const loginWithCredentials = async (
     email: string,
@@ -89,7 +143,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
         if (data.user) {
           setIsAuthenticated(true);
-          // Look up corresponding member profile
           const matched = members.find(
             (m) => m.phone.toLowerCase().includes(email.split('@')[0]) || m.name.toLowerCase().includes(email.split('@')[0])
           );
@@ -101,7 +154,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     }
 
-    // Secure verification for the 10 Mahber accounts
+    // Secure verification for the 11 Mahber accounts
     const cleanInput = email.toLowerCase().trim();
     const emailPrefix = cleanInput.includes('@') ? cleanInput.split('@')[0].trim() : cleanInput;
     const cleanPhoneInput = cleanInput.replace(/\D/g, '');
@@ -160,23 +213,38 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // STRICT 2-ADMIN LIMIT CHECK
-  const updateMemberRole = (memberId: string, newRole: Role): { success: boolean; error?: string } => {
+  // Super Admin assigns granular administrative roles
+  const assignMemberAdminRoles = (
+    memberId: string,
+    newRoles: AdminRole[]
+  ): { success: boolean; error?: string } => {
+    if (!isSuperAdmin) {
+      return {
+        success: false,
+        error: 'Only the Super Admin can appoint or revoke administrative roles. / አስተዳዳሪዎችን የመሾም ስልጣን ያለው ዋና አስተዳዳሪው ብቻ ነው።',
+      };
+    }
+
     const target = members.find((m) => m.id === memberId);
     if (!target) return { success: false, error: 'Member not found' };
 
-    if (newRole === 'admin') {
-      const currentAdminCount = members.filter(
-        (m) => m.role === 'admin' && m.id !== memberId && !m.isDeactivated
-      ).length;
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.id === memberId
+          ? {
+              ...m,
+              roles: newRoles,
+              role: newRoles.length > 0 ? ('admin' as const) : ('member' as const),
+            }
+          : m
+      )
+    );
+    return { success: true };
+  };
 
-      if (currentAdminCount >= 2) {
-        return {
-          success: false,
-          error: 'Medhanialem Mahber already has two administrators. / መድኃኔዓለም ማኅበር ሁለት አስተዳዳሪዎች አሉት።',
-        };
-      }
-    }
+  const updateMemberRole = (memberId: string, newRole: Role): { success: boolean; error?: string } => {
+    const target = members.find((m) => m.id === memberId);
+    if (!target) return { success: false, error: 'Member not found' };
 
     // Safety: Cannot remove the last active administrator!
     if (target.role === 'admin' && newRole === 'member') {
@@ -204,16 +272,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const addMember = (newMemberData: Omit<Member, 'id'>): { success: boolean; error?: string } => {
-    if (newMemberData.role === 'admin') {
-      const activeAdminCount = members.filter((m) => m.role === 'admin' && !m.isDeactivated).length;
-      if (activeAdminCount >= 2) {
-        return {
-          success: false,
-          error: 'Medhanialem Mahber already has two administrators. / መድኃኔዓለም ማኅበር ሁለት አስተዳዳሪዎች አሉት።',
-        };
-      }
-    }
-
     const newMember: Member = {
       ...newMemberData,
       id: `m-${Date.now()}`,
@@ -252,12 +310,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         currentUser,
         allMembers: members,
         isAdmin,
+        isSuperAdmin,
+        isManagementAdmin,
+        isFinanceAdmin,
+        isAttendanceAdmin,
+        isMezmurAdmin,
+        hasRole,
         isAuthenticated,
         loginWithCredentials,
+        activateAccountWithInvite,
         signOut,
         resetPassword,
         switchUser,
         updateMemberRole,
+        assignMemberAdminRoles,
         updateMemberDetails,
         addMember,
         deactivateMember,

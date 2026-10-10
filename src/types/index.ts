@@ -1,25 +1,45 @@
 export type Role = 'admin' | 'member';
 
+export type AdminRole =
+  | 'super_admin'
+  | 'management_admin'
+  | 'finance_admin'
+  | 'attendance_admin'
+  | 'mezmur_admin';
+
+export type MemberStatus = 'active' | 'temporarily_absent' | 'inactive';
+
 export interface Member {
   id: string;
   name: string;
   amharicName: string;
   baptismalName?: string;
   role: Role;
+  roles?: AdminRole[];
   phone: string;
   avatarUrl: string;
   attendanceRate?: number;
+  status?: MemberStatus;
   isDeactivated?: boolean;
+  livesAbroad?: boolean;
+  phoneVisibilityConsent?: boolean;
+  spiritualRole?: string;
 }
 
 export type AttendanceStatus = 'coming' | 'cant_come' | 'no_response';
 export type ActualAttendanceStatus = 'PRESENT' | 'EXCUSED' | 'LATE' | 'ABSENT';
-export type AbsenceReasonCategory = 'work' | 'travel' | 'family' | 'personal' | 'health' | 'other';
+export type AbsenceReasonCategory = 'work' | 'travel' | 'family' | 'personal' | 'health' | 'abroad' | 'other';
 export type AdminReviewStatus = 'accepted' | 'needs_review' | 'pending';
 
 export interface GatheringAttendanceEntry {
   memberId: string;
   status: ActualAttendanceStatus;
+  arrivalTime?: string;
+  isLate?: boolean;
+  isExcused?: boolean;
+  exemptionReason?: string;
+  penaltyAmount?: number;
+  correctionReason?: string;
   note?: string;
   updatedAt: string;
 }
@@ -64,6 +84,13 @@ export interface Gathering {
   time: string; // e.g. "6:00 ከሰዓት" / "6:00 PM"
   location: string; // e.g. "ቦሌ" / "Bole"
   locationDetails?: string;
+  assignedHostId?: string;
+  scheduledHostId?: string;
+  actualLocation?: string;
+  startTime?: string;
+  biblePassage?: string;
+  teachingNotes?: string;
+  selectedMezmurIds?: string[];
   daysUntil: number;
   status: 'scheduled' | 'completed' | 'cancelled';
   program: ProgramItem[];
@@ -357,3 +384,134 @@ export interface MahberHistoryGathering {
   imageUrl?: string;
   completedAt?: string;
 }
+
+export type PenaltyType = 'late' | 'absence';
+export type PenaltyStatus = 'pending' | 'paid' | 'waived';
+
+export interface PenaltyRecord {
+  id: string;
+  memberId: string;
+  gatheringId?: string;
+  type: PenaltyType;
+  amount: number; // 100 ETB for late, 200 ETB for absence
+  reason?: string;
+  reasonAm?: string;
+  status: PenaltyStatus;
+  waivedBy?: string;
+  waiverReason?: string;
+  recordedBy: string;
+  createdAt: string;
+  paidAt?: string;
+}
+
+export interface TransportPayment {
+  id: string;
+  memberId: string;
+  amount: number;
+  paidAt: string;
+  note?: string;
+  recordedBy: string;
+}
+
+export interface TransportCollection {
+  id: string;
+  gatheringId: string;
+  title: string;
+  titleAm: string;
+  destination: string;
+  agreedAmountPerMember: number;
+  notes?: string;
+  status: 'open' | 'closed';
+  payments: TransportPayment[];
+  createdAt: string;
+}
+
+export type FundCategory =
+  | 'contribution'
+  | 'late_penalty'
+  | 'absence_penalty'
+  | 'transport'
+  | 'special_collection'
+  | 'donation'
+  | 'expense';
+
+export interface SharedFundTransaction {
+  id: string;
+  type: 'income' | 'expense';
+  category: FundCategory;
+  amount: number;
+  purpose: string;
+  purposeAm?: string;
+  date: string;
+  relatedGatheringId?: string;
+  relatedProposalId?: string;
+  recordedBy: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface ProposalVote {
+  memberId: string;
+  vote: 'favor' | 'against';
+  votedAt: string;
+}
+
+export interface SpendingProposal {
+  id: string;
+  title: string;
+  titleAm: string;
+  description: string;
+  descriptionAm?: string;
+  amount: number;
+  category: string;
+  proposedBy: string;
+  proposedByName: string;
+  status: 'active' | 'approved' | 'rejected' | 'executed';
+  votes: ProposalVote[];
+  targetExpenseId?: string;
+  createdAt: string;
+  expiresAt?: string;
+}
+
+export interface HostingSwapRecord {
+  id: string;
+  gatheringId: string;
+  originalHostId: string;
+  substituteHostId: string;
+  reason: string;
+  reasonAm?: string;
+  approvedBy: string;
+  createdAt: string;
+}
+
+export interface PaintingHandoverRecord {
+  id: string;
+  fromMemberId: string;
+  toMemberId: string;
+  gatheringId: string;
+  confirmedDate: string;
+  recordedBy: string;
+  notes?: string;
+}
+
+export interface PaintingRotationState {
+  rotationOrder: string[]; // member IDs in scheduled order
+  currentHolderId: string;
+  nextAssignedHostId: string;
+  scheduledHostId: string;
+  currentGatheringLocation: string;
+  swaps: HostingSwapRecord[];
+  handovers: PaintingHandoverRecord[];
+}
+
+export interface MemberInvitation {
+  id: string;
+  memberId: string;
+  code: string;
+  createdBy: string;
+  createdAt: string;
+  expiresAt: string;
+  isUsed: boolean;
+  usedAt?: string;
+}
+

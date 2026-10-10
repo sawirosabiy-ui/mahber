@@ -100,6 +100,36 @@ export const RoomView: React.FC<RoomViewProps> = ({
     setAnnouncements(mahberService.getAnnouncements());
   }, [currentUser.id, isAdmin]);
 
+  // Real-time synchronization across multiple tabs/windows for concurrent chat
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'mahber_messages_v5') {
+        onRefreshMessages?.();
+      }
+    };
+
+    const handleCustomUpdate = () => {
+      onRefreshMessages?.();
+    };
+
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('mahber_chat_updated', handleCustomUpdate);
+
+    let bc: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      bc = new BroadcastChannel('mahber_chat_channel');
+      bc.onmessage = () => {
+        onRefreshMessages?.();
+      };
+    }
+
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('mahber_chat_updated', handleCustomUpdate);
+      bc?.close();
+    };
+  }, [onRefreshMessages]);
+
   // Pinned announcement for chat top banner
   const pinnedAnnouncement = announcements.find((a) => a.isPinned);
 

@@ -11,11 +11,12 @@ interface LoginViewProps {
 
 export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
   const { t, language } = useLanguage();
-  const { loginWithCredentials, resetPassword, allMembers } = useAuth();
+  const { loginWithCredentials, resetPassword, activateAccountWithInvite, allMembers } = useAuth();
 
+  const [mode, setMode] = useState<'login' | 'invite' | 'reset'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isResetMode, setIsResetMode] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -27,7 +28,22 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
     setLoading(true);
 
     try {
-      if (isResetMode) {
+      if (mode === 'invite') {
+        if (!inviteCode.trim()) {
+          setErrorMessage(language === 'am' ? 'እባክዎን የግብዣ ኮድዎን ያስገቡ።' : 'Please provide your invitation code.');
+          setLoading(false);
+          return;
+        }
+        const res = await activateAccountWithInvite(inviteCode.trim());
+        if (res.success) {
+          setSuccessMessage(
+            language === 'am' ? 'እንኳን ደህና መጡ! መለያዎ በተሳካ ሁኔታ ነቅቷል።' : 'Welcome! Your account has been activated.'
+          );
+          if (onSuccess) onSuccess();
+        } else {
+          setErrorMessage(res.error || (language === 'am' ? 'ልክ ያልሆነ ወይም ጊዜው ያለፈበት የግብዣ ኮድ' : 'Invalid or expired invitation code'));
+        }
+      } else if (mode === 'reset') {
         if (!email.trim()) {
           setErrorMessage(language === 'am' ? 'እባክዎን ኢሜይልዎን ያስገቡ።' : 'Please provide your email.');
           setLoading(false);
@@ -81,12 +97,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
     }
   };
 
-  // Quick fill helper for review & testing
-  const handleQuickFill = (targetEmail: string) => {
-    setEmail(targetEmail);
-    setPassword('Mahber2026!');
-    setErrorMessage(null);
-  };
 
   return (
     <div className="min-h-screen w-full flex flex-col justify-between items-center p-5 bg-[#151311] text-[#F5EFE3] select-none animate-fade-in relative overflow-hidden">
@@ -115,14 +125,40 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
 
       {/* Login Card Form */}
       <div className="relative z-10 w-full max-w-sm rounded-3xl p-5 bg-[#201D19]/90 backdrop-blur-md border border-[#B89A5A]/30 shadow-sacred space-y-4 my-auto">
+        {/* Mode Switcher Tabs */}
+        <div className="flex rounded-xl bg-[#151311] p-1 border border-[#B89A5A]/20">
+          <button
+            type="button"
+            onClick={() => { setMode('login'); setErrorMessage(null); setSuccessMessage(null); }}
+            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition ${
+              mode === 'login' ? 'bg-[#6F2630] text-white shadow-sm' : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            {language === 'am' ? 'ግባ (Sign In)' : 'Sign In'}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMode('invite'); setErrorMessage(null); setSuccessMessage(null); }}
+            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition ${
+              mode === 'invite' ? 'bg-[#6F2630] text-white shadow-sm' : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            {language === 'am' ? 'የግብዣ ኮድ' : 'Invite Code'}
+          </button>
+        </div>
+
         <div className="text-center pb-1">
           <h2 className="text-sm font-bold text-[#F5EFE3]">
-            {isResetMode
+            {mode === 'invite'
+              ? language === 'am' ? 'በግብዣ ኮድ መለያ ማግበር' : 'Activate with Invite Code'
+              : mode === 'reset'
               ? language === 'am' ? 'የይለፍ ቃል መልሶ ማግኛ' : 'Reset Password'
               : language === 'am' ? 'ወደ ማኅበሩ ይግቡ' : 'Sign In to Your Mahber'}
           </h2>
           <p className="text-[11px] text-gray-400 mt-0.5">
-            {isResetMode
+            {mode === 'invite'
+              ? language === 'am' ? 'ከአስተዳዳሪ የተሰጠዎትን ባለ 8 ዲጂት የግብዣ ኮድ ያስገቡ' : 'Enter the single-use invite code provided by an admin'
+              : mode === 'reset'
               ? language === 'am' ? 'የተመዘገቡበትን ኢሜይል ያስገቡ' : 'Enter your registered email'
               : language === 'am' ? 'ይህ የግል ማኅበር ለአባላት ብቻ የተፈቀደ ነው' : 'Private Mahber for authorized members only'}
           </p>
@@ -145,51 +181,73 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-3">
-          {/* Email field */}
-          <div className="space-y-1">
-            <label className="block text-[11px] font-semibold text-gray-400">
-              {language === 'am' ? 'ኢሜይል (Email)' : 'Email Address'}
-            </label>
-            <div className="relative">
-              <Mail size={15} className="absolute left-3 top-3 text-gray-500" />
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="member@mahber.org"
-                required
-                className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/25 pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-[#B89A5A] transition"
-              />
-            </div>
-          </div>
-
-          {/* Password field */}
-          {!isResetMode && (
+          {mode === 'invite' ? (
+            /* Invite Code Input */
             <div className="space-y-1">
-              <div className="flex justify-between items-center">
-                <label className="block text-[11px] font-semibold text-gray-400">
-                  {language === 'am' ? 'የይለፍ ቃል (Password)' : 'Password'}
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setIsResetMode(true)}
-                  className="text-[10px] text-[#B89A5A] hover:underline"
-                >
-                  {language === 'am' ? 'ረሱት?' : 'Forgot?'}
-                </button>
-              </div>
+              <label className="block text-[11px] font-semibold text-gray-400">
+                {language === 'am' ? 'የግብዣ ኮድ (e.g. MAH-AB12CD)' : 'Invitation Code'}
+              </label>
               <div className="relative">
-                <Lock size={15} className="absolute left-3 top-3 text-gray-500" />
+                <ShieldCheck size={15} className="absolute left-3 top-3 text-[#B89A5A]" />
                 <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  type="text"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                  placeholder="MAH-XXXXXX"
                   required
-                  className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/25 pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-[#B89A5A] transition"
+                  className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/25 pl-9 pr-3 py-2 text-xs font-mono uppercase tracking-wider text-white focus:outline-none focus:border-[#B89A5A] transition"
                 />
               </div>
             </div>
+          ) : (
+            <>
+              {/* Email field */}
+              <div className="space-y-1">
+                <label className="block text-[11px] font-semibold text-gray-400">
+                  {language === 'am' ? 'ስም ወይም ስልክ (Name or Phone)' : 'Name or Phone / Email'}
+                </label>
+                <div className="relative">
+                  <Mail size={15} className="absolute left-3 top-3 text-gray-500" />
+                  <input
+                    type="text"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Sawiros / 0911000001"
+                    required
+                    className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/25 pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-[#B89A5A] transition"
+                  />
+                </div>
+              </div>
+
+              {/* Password field */}
+              {mode === 'login' && (
+                <div className="space-y-1">
+                  <div className="flex justify-between items-center">
+                    <label className="block text-[11px] font-semibold text-gray-400">
+                      {language === 'am' ? 'የይለፍ ቃል (Password)' : 'Password'}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setMode('reset')}
+                      className="text-[10px] text-[#B89A5A] hover:underline"
+                    >
+                      {language === 'am' ? 'ረሱት?' : 'Forgot?'}
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <Lock size={15} className="absolute left-3 top-3 text-gray-500" />
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      required
+                      className="w-full rounded-xl bg-[#151311] border border-[#B89A5A]/25 pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-[#B89A5A] transition"
+                    />
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* Submit Action */}
@@ -200,7 +258,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
           >
             {loading ? (
               <span className="animate-spin text-sm">❖</span>
-            ) : isResetMode ? (
+            ) : mode === 'invite' ? (
+              <>
+                <ShieldCheck size={15} />
+                <span>{language === 'am' ? 'መለያ አግብር (Activate Account)' : 'Activate Account'}</span>
+              </>
+            ) : mode === 'reset' ? (
               <>
                 <KeyRound size={15} />
                 <span>{language === 'am' ? 'ማስፈንጠሪያ ላክ' : 'Send Reset Link'}</span>
@@ -213,10 +276,10 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
             )}
           </button>
 
-          {isResetMode && (
+          {mode === 'reset' && (
             <button
               type="button"
-              onClick={() => setIsResetMode(false)}
+              onClick={() => setMode('login')}
               className="w-full py-2 text-center text-[11px] text-gray-400 hover:text-white"
             >
               ← {language === 'am' ? 'ወደ መግቢያ ተመለስ' : 'Back to Sign In'}

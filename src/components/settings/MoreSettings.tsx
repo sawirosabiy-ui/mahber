@@ -3,23 +3,19 @@ import { useLanguage } from '../../context/LanguageContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { MahberHistoryGathering, Member } from '../../types';
+import { mahberService } from '../../services/mahberService';
 import { EthiopianCross } from '../common/EthiopianCross';
-import { SacredDivider } from '../common/SacredDivider';
 import { HistoryView } from '../history/HistoryView';
 import { ProfileModal } from '../profile/ProfileModal';
 import {
   Globe,
   Moon,
   Sun,
-  User,
   History,
-  Info,
   ShieldCheck,
   ChevronRight,
-  CreditCard,
-  Calendar,
-  Users,
   Bell,
+  LogOut,
 } from 'lucide-react';
 
 interface MoreSettingsProps {
@@ -39,9 +35,8 @@ export const MoreSettings: React.FC<MoreSettingsProps> = ({
 }) => {
   const { t, language, setLanguage } = useLanguage();
   const { theme, toggleTheme } = useTheme();
-  const { currentUser, allMembers, switchUser } = useAuth();
+  const { currentUser, signOut } = useAuth();
   const [showHistoryModal, setShowHistoryModal] = useState(false);
-  const [showUserSwitcher, setShowUserSwitcher] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [inspectedMember, setInspectedMember] = useState<Member | null>(null);
 
@@ -188,86 +183,52 @@ export const MoreSettings: React.FC<MoreSettingsProps> = ({
           <ChevronRight size={16} className="text-gray-400" />
         </button>
 
+        {/* Sign Out Button */}
         <button
-          onClick={() => setShowUserSwitcher(!showUserSwitcher)}
+          onClick={() => {
+            if (window.confirm(language === 'am' ? 'በእርግጥ መውጣት ይፈልጋሉ?' : 'Are you sure you want to sign out?')) {
+              signOut();
+            }
+          }}
+          className="w-full py-3 px-2 flex items-center justify-between text-left hover:bg-[#6F2630]/10 rounded-xl transition group"
+        >
+          <div className="flex items-center gap-3">
+            <LogOut size={18} className="text-[#D98A94] group-hover:text-red-400 transition" />
+            <div>
+              <div className="text-xs font-semibold text-[#D98A94] group-hover:text-red-300">
+                {language === 'am' ? 'ከመለያ ውጣ (Sign Out)' : 'Sign Out'}
+              </div>
+              <div className="text-[10px] text-gray-400">
+                {language === 'am' ? 'የግል መግቢያዎን በሰላም ይዝጉ' : 'Securely end your Mahber session'}
+              </div>
+            </div>
+          </div>
+          <ChevronRight size={16} className="text-[#D98A94]" />
+        </button>
+
+        <button
+          onClick={() => onNavigateTab('admin')}
           className="w-full py-3 px-2 flex items-center justify-between text-left hover:bg-white/5 rounded-xl transition"
         >
           <div className="flex items-center gap-3">
-            <Users size={18} className="text-[#315C48]" />
+            <ShieldCheck size={18} className="text-[#6F2630]" />
             <div>
-              <div className="text-xs font-semibold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E]">
-                {t.switchUser}
+              <div className="text-xs font-bold text-[#D98A94] flex items-center gap-1.5">
+                <span>{t.adminDashboardTitle}</span>
+                {currentUser.role !== 'admin' && !mahberService.isAdminSessionUnlocked() && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#6F2630]/30 text-[#E598A0] border border-[#6F2630]/40 font-normal">
+                    🔒 ይለፍ ቃል
+                  </span>
+                )}
               </div>
               <div className="text-[10px] text-gray-400">
-                የተጠቃሚ ሚናዎችን እና ግላዊነትን ለመፈተሽ
+                {language === 'am' ? 'የአስተዳዳሪ ማስተዳደሪያ ገጽ (በይለፍ ቃል የተጠበቀ)' : 'Admin Management Panel (Password Protected)'}
               </div>
             </div>
           </div>
-          <span className="text-[11px] text-[#B89A5A] px-2 py-0.5 rounded-full bg-[#B89A5A]/15 font-mono">
-            {currentUser.name.split(' ')[0]}
-          </span>
+          <ChevronRight size={16} className="text-[#D98A94]" />
         </button>
-
-        {currentUser.role === 'admin' && (
-          <button
-            onClick={() => onNavigateTab('admin')}
-            className="w-full py-3 px-2 flex items-center justify-between text-left hover:bg-white/5 rounded-xl transition"
-          >
-            <div className="flex items-center gap-3">
-              <ShieldCheck size={18} className="text-[#6F2630]" />
-              <div>
-                <div className="text-xs font-bold text-[#D98A94]">
-                  {t.adminDashboardTitle}
-                </div>
-                <div className="text-[10px] text-gray-400">
-                  የአስተዳዳሪ ማስተዳደሪያ ገጽ (ልዩ መብት)
-                </div>
-              </div>
-            </div>
-            <ChevronRight size={16} className="text-[#D98A94]" />
-          </button>
-        )}
       </div>
-
-      {/* Member Switcher Modal / Dropdown */}
-      {showUserSwitcher && (
-        <div className="rounded-3xl p-4 bg-[#29251F] border border-[#B89A5A]/30 space-y-3 animate-fade-in">
-          <div className="flex items-center justify-between border-b border-[#B89A5A]/15 pb-2">
-            <h4 className="text-xs font-bold text-[#B89A5A]">{t.switchUser}</h4>
-            <span className="text-[10px] text-gray-400">10 አባላት</span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            {allMembers.map((m) => {
-              const isSelected = m.id === currentUser.id;
-              return (
-                <button
-                  key={m.id}
-                  onClick={() => {
-                    switchUser(m.id);
-                    setShowUserSwitcher(false);
-                  }}
-                  className={`p-2 rounded-xl text-left border text-xs flex items-center gap-2 transition ${
-                    isSelected
-                      ? 'bg-[#6F2630] border-[#B89A5A] text-white font-bold'
-                      : 'bg-[#201D19] border-white/5 text-gray-300 hover:border-[#B89A5A]/40'
-                  }`}
-                >
-                  <img
-                    src={m.avatarUrl}
-                    alt={m.name}
-                    className="w-6 h-6 rounded-full object-cover shrink-0"
-                  />
-                  <div className="min-w-0">
-                    <div className="truncate text-[11px]">{m.amharicName}</div>
-                    <div className="text-[9px] text-gray-400">{m.role === 'admin' ? '⭐ Admin' : 'Member'}</div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Digital Memory Book (HistoryView) Modal */}
       {showHistoryModal && (

@@ -26,7 +26,21 @@ import {
   MahberHistoryGathering,
   GatheringPhoto,
   HistoricalPresentMember,
+  PaintingRotationState,
+  HostingSwapRecord,
+  PaintingHandoverRecord,
+  PenaltyRecord,
+  TransportCollection,
+  TransportPayment,
+  SharedFundTransaction,
+  SpendingProposal,
+  ProposalVote,
+  MemberInvitation,
+  Member,
 } from '../types';
+
+export const ADMIN_MASTER_PASSWORD = 'mahber@27';
+
 import {
   INITIAL_GATHERING,
   INITIAL_ATTENDANCE,
@@ -41,6 +55,11 @@ import {
   DEFAULT_NOTIFICATION_PREFERENCE,
   INITIAL_HISTORY,
   INITIAL_MEMBERS,
+  INITIAL_PAINTING_ROTATION,
+  INITIAL_PENALTIES,
+  INITIAL_TRANSPORT_COLLECTIONS,
+  INITIAL_SHARED_FUND_TRANSACTIONS,
+  INITIAL_SPENDING_PROPOSALS,
 } from '../data/mockData';
 import { getNextMahberProjectedDate } from '../utils/ethiopianCalendar';
 
@@ -54,8 +73,8 @@ const KEY_GATHERINGS = 'mahber_gatherings_v3';
 const KEY_ATTENDANCE = 'mahber_attendance_v3';
 const KEY_ACTUAL_ATTENDANCE = 'mahber_actual_attendance_v1';
 const KEY_AUDIT_LOGS = 'mahber_audit_logs_v1';
-const KEY_PERIODS = 'mahber_periods_v3';
-const KEY_PAYMENTS = 'mahber_payments_v3';
+const KEY_PERIODS = 'mahber_periods_v4';
+const KEY_PAYMENTS = 'mahber_payments_v4';
 const KEY_MEZMURS = 'mahber_mezmurs_v3';
 const KEY_SUGGESTIONS = 'mahber_mezmur_suggestions_v4';
 const KEY_STUDIES = 'mahber_mezmur_studies_v4';
@@ -67,26 +86,32 @@ const KEY_ANNOUNCEMENTS = 'mahber_announcements_v5';
 const KEY_PRAYERS = 'mahber_prayers_v5';
 const KEY_NOTIF_PREFS = 'mahber_notif_prefs_v5';
 const KEY_HISTORY = 'mahber_history_v3';
+const KEY_PAINTING_ROTATION = 'mahber_rotation_v1';
+const KEY_PENALTIES = 'mahber_penalties_v1';
+const KEY_TRANSPORT = 'mahber_transport_v1';
+const KEY_SHARED_FUND = 'mahber_shared_fund_v1';
+const KEY_PROPOSALS = 'mahber_proposals_v1';
+const KEY_INVITATIONS = 'mahber_invitations_v1';
 
 const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
   {
     id: 'audit-init-1',
     adminUserId: 'm1',
-    adminName: 'አበበ ተፈራ (Abebe)',
+    adminName: 'ሳዊሮስ አብይ (Sawiros)',
     action: 'System Initialized & Security Policies Configured',
     actionAm: 'የመድኃኔዓለም ማኅበር ስርዓት እና የደህንነት ደንቦች ተዘጋጁ',
     targetType: 'system',
-    details: '2-Admin model locked, RLS privacy boundaries active',
+    details: '11-Member roster initialized, fine-grained RBAC active',
     createdAt: '2026-10-01T08:00:00Z',
   },
   {
     id: 'audit-init-2',
     adminUserId: 'm2',
-    adminName: 'ዳዊት ገብረ (Dawit)',
+    adminName: 'ናትናኤል እንዳለ (Natnael)',
     action: 'Initial Gathering Scheduled for Meskerem 27',
     actionAm: 'የመስከረም 27 ወርሃዊ ማኅበር ተመደበ',
     targetType: 'gathering',
-    details: 'Location: Bole, Time: 6:00 PM',
+    details: 'Location: Bole, Time: 3:00 PM (15:00)',
     createdAt: '2026-10-02T10:30:00Z',
   },
 ];
@@ -98,7 +123,7 @@ const INITIAL_PERIODS: ContributionPeriod[] = [
     nameAm: 'መስከረም 2019',
     ethMonth: 'መስከረም',
     yearEth: '2019',
-    expectedAmount: 500.0,
+    expectedAmount: 100.0,
     status: 'active',
   },
   {
@@ -107,7 +132,7 @@ const INITIAL_PERIODS: ContributionPeriod[] = [
     nameAm: 'ጥቅምት 2018',
     ethMonth: 'ጥቅምት',
     yearEth: '2018',
-    expectedAmount: 500.0,
+    expectedAmount: 100.0,
     status: 'closed',
   },
   {
@@ -116,22 +141,17 @@ const INITIAL_PERIODS: ContributionPeriod[] = [
     nameAm: 'ኅዳር 2018',
     ethMonth: 'ኅዳር',
     yearEth: '2018',
-    expectedAmount: 500.0,
+    expectedAmount: 100.0,
     status: 'closed',
   },
 ];
 
 const INITIAL_PAYMENTS: PaymentEntry[] = [
-  { id: 'pay-1', memberId: 'm1', periodId: 'per-meskerem-2019', amount: 500, paymentDate: '27 መስከረም 2019', note: 'ሙሉ ክፍያ', createdAt: '2026-10-01' },
-  { id: 'pay-2', memberId: 'm2', periodId: 'per-meskerem-2019', amount: 500, paymentDate: '27 መስከረም 2019', note: 'ሙሉ ክፍያ', createdAt: '2026-10-01' },
-  { id: 'pay-3', memberId: 'm3', periodId: 'per-meskerem-2019', amount: 400, paymentDate: '25 መስከረም 2019', note: 'ከፊል ክፍያ (100 ብር ቀሪ)', createdAt: '2026-10-02' },
-  { id: 'pay-4', memberId: 'm4', periodId: 'per-meskerem-2019', amount: 500, paymentDate: '27 መስከረም 2019', createdAt: '2026-10-02' },
-  { id: 'pay-5', memberId: 'm5', periodId: 'per-meskerem-2019', amount: 500, paymentDate: '27 መስከረም 2019', createdAt: '2026-10-02' },
-  { id: 'pay-6', memberId: 'm6', periodId: 'per-meskerem-2019', amount: 500, paymentDate: '26 መስከረም 2019', createdAt: '2026-10-03' },
-  { id: 'pay-7', memberId: 'm7', periodId: 'per-meskerem-2019', amount: 500, paymentDate: '27 መስከረም 2019', createdAt: '2026-10-03' },
-  { id: 'pay-8', memberId: 'm8', periodId: 'per-meskerem-2019', amount: 500, paymentDate: '27 መስከረም 2019', createdAt: '2026-10-03' },
-  { id: 'pay-9', memberId: 'm9', periodId: 'per-meskerem-2019', amount: 500, paymentDate: '27 መስከረም 2019', createdAt: '2026-10-03' },
-  { id: 'pay-10', memberId: 'm10', periodId: 'per-meskerem-2019', amount: 100, paymentDate: '20 መስከረም 2019', note: 'ከፊል ክፍያ (400 ብር ቀሪ)', createdAt: '2026-10-04' },
+  { id: 'pay-1', memberId: 'm1', periodId: 'per-meskerem-2019', amount: 100, paymentDate: '27 መስከረም 2019', note: 'ሙሉ ክፍያ', createdAt: '2026-10-01' },
+  { id: 'pay-2', memberId: 'm2', periodId: 'per-meskerem-2019', amount: 100, paymentDate: '27 መስከረም 2019', note: 'ሙሉ ክፍያ', createdAt: '2026-10-01' },
+  { id: 'pay-3', memberId: 'm5', periodId: 'per-meskerem-2019', amount: 100, paymentDate: '27 መስከረም 2019', note: 'የውጭ ሀገር ክፍያ / Diaspora transfer', createdAt: '2026-10-02' },
+  { id: 'pay-4', memberId: 'm6', periodId: 'per-meskerem-2019', amount: 100, paymentDate: '27 መስከረም 2019', note: 'ሙሉ ክፍያ', createdAt: '2026-10-02' },
+  { id: 'pay-5', memberId: 'm10', periodId: 'per-meskerem-2019', amount: 100, paymentDate: '27 መስከረም 2019', note: 'ሙሉ ክፍያ', createdAt: '2026-10-03' },
 ];
 
 class MahberService {
@@ -484,6 +504,58 @@ class MahberService {
     return newEntry;
   }
 
+  // Admin records advance contribution allocated across future months
+  recordAdvancePayment(
+    memberId: string,
+    totalAmount: number,
+    paymentDate: string = '27 መስከረም 2019',
+    note?: string,
+    recordedBy?: string
+  ): PaymentEntry[] {
+    const periods = this.getContributionPeriods();
+    let remaining = Math.round(totalAmount * 100) / 100;
+    const recordedEntries: PaymentEntry[] = [];
+
+    // Allocate sequentially starting from the active period down the periods list
+    for (const period of periods) {
+      if (remaining <= 0) break;
+      const existingPayments = this.getAllPayments().filter(
+        (p) => p.memberId === memberId && p.periodId === period.id && !p.isVoided
+      );
+      const alreadyPaid = existingPayments.reduce((s, p) => s + p.amount, 0);
+      const neededForPeriod = Math.max(0, period.expectedAmount - alreadyPaid);
+
+      if (neededForPeriod > 0) {
+        const alloc = Math.min(remaining, neededForPeriod);
+        const entry = this.recordPayment(
+          memberId,
+          period.id,
+          alloc,
+          paymentDate,
+          note ? `${note} (${period.nameAm})` : `ቅድመ ክፍያ (${period.nameAm})`,
+          recordedBy
+        );
+        recordedEntries.push(entry);
+        remaining = Math.round((remaining - alloc) * 100) / 100;
+      }
+    }
+
+    if (remaining > 0) {
+      const activeOrFirst = periods.find((p) => p.status === 'active') || periods[0];
+      const entry = this.recordPayment(
+        memberId,
+        activeOrFirst.id,
+        remaining,
+        paymentDate,
+        note ? `${note} (ተጨማሪ ቅድመ ክፍያ)` : 'ተጨማሪ ቅድመ ክፍያ',
+        recordedBy
+      );
+      recordedEntries.push(entry);
+    }
+
+    return recordedEntries;
+  }
+
   // Admin edits a payment (recalculates immediately)
   editPayment(
     paymentId: string,
@@ -513,15 +585,15 @@ class MahberService {
     localStorage.setItem(KEY_PAYMENTS, JSON.stringify(updated));
   }
 
-  // Calculate overall Mahber financial totals across all 10 members
-  getAdminFinancialOverview(activeMembersCount: number = 10): {
+  // Calculate overall Mahber financial totals across all 11 members
+  getAdminFinancialOverview(activeMembersCount: number = 11): {
     expectedTotal: number;
     collectedTotal: number;
     outstandingTotal: number;
   } {
     const periods = this.getContributionPeriods();
     const activePeriod = periods.find((p) => p.status === 'active') || periods[0];
-    const expectedPerMember = activePeriod ? activePeriod.expectedAmount : 500;
+    const expectedPerMember = activePeriod ? activePeriod.expectedAmount : 100;
     const expectedTotal = expectedPerMember * activeMembersCount;
 
     const payments = this.getAllPayments().filter(
@@ -960,14 +1032,18 @@ class MahberService {
       };
     }
 
-    const all = this.getMessages();
     const now = new Date();
     const hours = now.getHours();
     const minutes = now.getMinutes().toString().padStart(2, '0');
     const timeStr = `${hours % 12 || 12}:${minutes} ${hours >= 12 ? 'ከሰዓት' : 'ጠዋት'}`;
 
+    // Unique collision-proof ID (protects when 2 different members text at the exact same time)
+    const uniqueRand = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID().slice(0, 8)
+      : Math.random().toString(36).slice(2, 9);
+
     const newMsg: RoomMessage = {
-      id: `msg-${Date.now()}`,
+      id: `msg-${Date.now()}-${uniqueRand}`,
       memberId,
       memberName,
       memberAmharicName,
@@ -986,8 +1062,27 @@ class MahberService {
       ],
     };
 
-    const updated = [...all, newMsg];
-    localStorage.setItem(KEY_MESSAGES, JSON.stringify(updated));
+    // Re-read storage immediately before saving to prevent overwriting concurrent messages
+    const all = this.getMessages();
+    if (!all.some((m) => m.id === newMsg.id)) {
+      const updated = [...all, newMsg];
+      localStorage.setItem(KEY_MESSAGES, JSON.stringify(updated));
+    }
+
+    // Broadcast across windows / tabs for real-time concurrent chat sync
+    if (typeof window !== 'undefined') {
+      try {
+        if ('BroadcastChannel' in window) {
+          const bc = new BroadcastChannel('mahber_chat_channel');
+          bc.postMessage({ type: 'NEW_MESSAGE', message: newMsg });
+          bc.close();
+        }
+        window.dispatchEvent(new CustomEvent('mahber_chat_updated', { detail: newMsg }));
+      } catch {
+        // Fallback
+      }
+    }
+
     return { success: true, message: newMsg };
   }
 
@@ -1449,7 +1544,158 @@ class MahberService {
         `Gathering ID: ${gatheringId}`
       );
     }
+
+    // Automatically sync updated attendance to History so all members can view it!
+    this.syncAttendanceToHistory(gatheringId, entries, adminUserId, adminName);
+
+    // Broadcast live attendance update so regular users see changes immediately
+    if (typeof window !== 'undefined') {
+      try {
+        if ('BroadcastChannel' in window) {
+          const bc = new BroadcastChannel('mahber_attendance_channel');
+          bc.postMessage({ type: 'ATTENDANCE_UPDATE', gatheringId });
+          bc.close();
+        }
+        window.dispatchEvent(new CustomEvent('mahber_attendance_updated', { detail: { gatheringId } }));
+      } catch {
+        // Fallback
+      }
+    }
   }
+
+  // --- GET ALL MEMBERS (Canonical 11 members helper) ---
+  getAllMembers(): Member[] {
+    const saved = localStorage.getItem('mahber_members');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {
+        // Fallback
+      }
+    }
+    return INITIAL_MEMBERS;
+  }
+
+  // --- SYNC ACTUAL ATTENDANCE TO HISTORY ---
+  syncAttendanceToHistory(
+    gatheringId: string,
+    entries: Record<string, { status: ActualAttendanceStatus; note?: string }>,
+    adminUserId?: string,
+    adminName?: string
+  ): MahberHistoryGathering[] {
+    const allMembers = this.getAllMembers();
+    const activeMembers = allMembers.filter((m) => !m.isDeactivated);
+    const gathering = this.getNextGathering();
+
+    // Determine present members (status PRESENT or LATE counts as attending)
+    const presentMembers: HistoricalPresentMember[] = Object.entries(entries)
+      .filter(([_, entry]) => entry.status === 'PRESENT' || entry.status === 'LATE')
+      .map(([memberId]) => {
+        const found = allMembers.find((m) => m.id === memberId);
+        return {
+          id: memberId,
+          name: found ? found.name : memberId,
+          amharicName: found ? found.amharicName : memberId,
+          avatarUrl: found ? found.avatarUrl : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+        };
+      });
+
+    const attendingCount = presentMembers.length;
+    const totalCount = activeMembers.length;
+    const currentHistory = this.getHistory();
+    const now = new Date().toISOString();
+
+    // Check if a history record already exists for this gathering
+    const existingIndex = currentHistory.findIndex(
+      (h) => h.gatheringId === gatheringId || (gathering && h.ethDate === gathering.ethDate)
+    );
+
+    let updatedHistory: MahberHistoryGathering[];
+    if (existingIndex >= 0) {
+      const existing = currentHistory[existingIndex];
+      const updatedRecord: MahberHistoryGathering = {
+        ...existing,
+        gatheringId,
+        attendingCount,
+        totalCount,
+        presentMembers,
+        completedAt: now,
+      };
+      updatedHistory = [...currentHistory];
+      updatedHistory[existingIndex] = updatedRecord;
+    } else {
+      // Create new history record for this gathering
+      const ethDate = gathering ? gathering.ethDate : '27 መስከረም 2019';
+      const gregDate = gathering ? gathering.gregDate : 'October 7, 2026';
+      const parts = ethDate.split(' ');
+      const monthAm = parts[1] || 'መስከረም';
+      const yearAm = parts[2] || '2019';
+
+      const newRecord: MahberHistoryGathering = {
+        id: `hist-${gatheringId}`,
+        gatheringId,
+        ethDate,
+        gregDate,
+        yearEth: yearAm,
+        monthNameAm: monthAm,
+        monthNameEn: 'Meskerem',
+        location: gathering ? gathering.location : 'ቦሌ (Bole)',
+        locationDetails: gathering ? gathering.locationDetails : 'የማኅበሩ አባላት መኖሪያ ቤት',
+        attendingCount,
+        totalCount,
+        presentMembers,
+        mezmurId: 'mez-1',
+        mezmurAm: 'እመቤታችን ማርያም',
+        mezmurEn: 'Emebetachin Mariam',
+        notesAm: `በ${ethDate} የተካሄደ የማኅበር ስብሰባ የተሳትፎ መዝገብ።`,
+        notesEn: `Official gathering attendance roster for ${gregDate}.`,
+        memoryAm: `በስብሰባው ${attendingCount} አባላት ተገኝተዋል። የተሳትፎ መዝገብ በአስተዳዳሪ ${adminName || ''} ተረጋግጧል።`,
+        memory: `${attendingCount} members attended this gathering. Recorded by admin ${adminName || ''}.`,
+        completedAt: now,
+      };
+
+      updatedHistory = [newRecord, ...currentHistory];
+    }
+
+    localStorage.setItem(KEY_HISTORY, JSON.stringify(updatedHistory));
+
+    // Broadcast history update to other tabs/windows
+    if (typeof window !== 'undefined') {
+      try {
+        if ('BroadcastChannel' in window) {
+          const bc = new BroadcastChannel('mahber_history_channel');
+          bc.postMessage({ type: 'HISTORY_UPDATE', gatheringId });
+          bc.close();
+        }
+        window.dispatchEvent(new CustomEvent('mahber_history_updated', { detail: { gatheringId } }));
+      } catch {
+        // Fallback
+      }
+    }
+
+    return updatedHistory;
+  }
+
+  // --- ADMIN SECURITY & PASSWORD VERIFICATION ---
+  verifyAdminPassword(password: string): boolean {
+    return password.trim() === ADMIN_MASTER_PASSWORD;
+  }
+
+  isAdminSessionUnlocked(): boolean {
+    if (typeof sessionStorage === 'undefined') return false;
+    return sessionStorage.getItem('mahber_admin_unlocked') === 'true';
+  }
+
+  setAdminSessionUnlocked(unlocked: boolean): void {
+    if (typeof sessionStorage === 'undefined') return;
+    if (unlocked) {
+      sessionStorage.setItem('mahber_admin_unlocked', 'true');
+    } else {
+      sessionStorage.removeItem('mahber_admin_unlocked');
+    }
+  }
+
 
   // --- AUDIT LOGS ---
   getAuditLogs(): AuditLogEntry[] {
@@ -1493,6 +1739,527 @@ class MahberService {
 
   clearAuditLogs(): void {
     localStorage.setItem(KEY_AUDIT_LOGS, JSON.stringify([]));
+  }
+
+  // --- PENALTIES & LATENESS CALCULATION ---
+  getPenalties(): PenaltyRecord[] {
+    const data = localStorage.getItem(KEY_PENALTIES);
+    if (data) {
+      try {
+        return JSON.parse(data);
+      } catch {
+        return INITIAL_PENALTIES;
+      }
+    }
+    return INITIAL_PENALTIES;
+  }
+
+  getMemberPenalties(memberId: string): PenaltyRecord[] {
+    return this.getPenalties().filter((p) => p.memberId === memberId);
+  }
+
+  // Grace period: 30 minutes after gathering start time.
+  // E.g., start time 15:00 -> 15:30 threshold. Arrival after threshold incurs 100 ETB late penalty.
+  recordLateArrivalWithGracePeriod(
+    gatheringId: string,
+    memberId: string,
+    arrivalTimeStr: string,
+    startTimeStr: string = '15:00',
+    recordedBy: string = 'Natnael Endale'
+  ): { isLate: boolean; penalty?: PenaltyRecord } {
+    const parseMinutes = (t: string) => {
+      const parts = t.split(':').map((s) => parseInt(s.replace(/\D/g, ''), 10));
+      return (parts[0] || 0) * 60 + (parts[1] || 0);
+    };
+
+    const startMins = parseMinutes(startTimeStr);
+    const arrivalMins = parseMinutes(arrivalTimeStr);
+    const graceLimitMins = startMins + 30; // 30-minute grace period
+
+    if (arrivalMins > graceLimitMins) {
+      const allPenalties = this.getPenalties();
+      const existing = allPenalties.find(
+        (p) => p.gatheringId === gatheringId && p.memberId === memberId && p.type === 'late'
+      );
+
+      if (existing) {
+        return { isLate: true, penalty: existing };
+      }
+
+      const newPenalty: PenaltyRecord = {
+        id: `pen-late-${Date.now()}-${memberId}`,
+        memberId,
+        gatheringId,
+        type: 'late',
+        amount: 100, // 100 ETB late penalty
+        reason: `Late arrival at ${arrivalTimeStr} (Scheduled: ${startTimeStr}, Grace: +30 min)`,
+        reasonAm: `በ ${arrivalTimeStr} ማርፈድ (የተመደበው: ${startTimeStr}፣ የይቅርታ ጊዜ: +30 ደቂቃ)`,
+        status: 'pending',
+        recordedBy,
+        createdAt: new Date().toISOString(),
+      };
+
+      const updated = [newPenalty, ...allPenalties];
+      localStorage.setItem(KEY_PENALTIES, JSON.stringify(updated));
+
+      this.recordSharedFundTransaction({
+        type: 'income',
+        category: 'late_penalty',
+        amount: 100,
+        purpose: `Late arrival penalty (Member ${memberId})`,
+        purposeAm: `የማርፈድ ቅጣት (አባል ${memberId})`,
+        date: new Date().toISOString().split('T')[0],
+        relatedGatheringId: gatheringId,
+        recordedBy,
+      });
+
+      return { isLate: true, penalty: newPenalty };
+    }
+
+    return { isLate: false };
+  }
+
+  recordAbsencePenalty(
+    gatheringId: string,
+    memberId: string,
+    isExcused: boolean,
+    exemptionReason?: string,
+    recordedBy: string = 'Natnael Endale'
+  ): PenaltyRecord | null {
+    const allPenalties = this.getPenalties();
+    const existing = allPenalties.find(
+      (p) => p.gatheringId === gatheringId && p.memberId === memberId && p.type === 'absence'
+    );
+
+    if (existing) return existing;
+
+    const newPenalty: PenaltyRecord = {
+      id: `pen-abs-${Date.now()}-${memberId}`,
+      memberId,
+      gatheringId,
+      type: 'absence',
+      amount: isExcused ? 0 : 200, // 200 ETB for unexcused absence
+      reason: isExcused ? `Excused absence: ${exemptionReason || 'Admin approved'}` : 'Unexcused absence',
+      reasonAm: isExcused ? `በፈቃድ የቀረ: ${exemptionReason || 'በአስተዳዳሪ ጸድቋል'}` : 'ያለፈቃድ መቅረት',
+      status: isExcused ? 'waived' : 'pending',
+      waivedBy: isExcused ? recordedBy : undefined,
+      waiverReason: isExcused ? exemptionReason : undefined,
+      recordedBy,
+      createdAt: new Date().toISOString(),
+    };
+
+    const updated = [newPenalty, ...allPenalties];
+    localStorage.setItem(KEY_PENALTIES, JSON.stringify(updated));
+
+    if (!isExcused) {
+      this.recordSharedFundTransaction({
+        type: 'income',
+        category: 'absence_penalty',
+        amount: 200,
+        purpose: `Unexcused absence penalty (Member ${memberId})`,
+        purposeAm: `ያለፈቃድ የመቅረት ቅጣት (አባል ${memberId})`,
+        date: new Date().toISOString().split('T')[0],
+        relatedGatheringId: gatheringId,
+        recordedBy,
+      });
+    }
+
+    return newPenalty;
+  }
+
+  payPenalty(penaltyId: string): PenaltyRecord | null {
+    const all = this.getPenalties();
+    const target = all.find((p) => p.id === penaltyId);
+    if (!target) return null;
+
+    const updated = all.map((p) =>
+      p.id === penaltyId
+        ? { ...p, status: 'paid' as const, paidAt: new Date().toISOString() }
+        : p
+    );
+    localStorage.setItem(KEY_PENALTIES, JSON.stringify(updated));
+    return updated.find((p) => p.id === penaltyId) || null;
+  }
+
+  // --- TRANSPORT COLLECTIONS ---
+  getTransportCollections(): TransportCollection[] {
+    const data = localStorage.getItem(KEY_TRANSPORT);
+    if (data) {
+      try {
+        return JSON.parse(data);
+      } catch {
+        return INITIAL_TRANSPORT_COLLECTIONS;
+      }
+    }
+    return INITIAL_TRANSPORT_COLLECTIONS;
+  }
+
+  createTransportCollection(
+    gatheringId: string,
+    title: string,
+    titleAm: string,
+    destination: string,
+    agreedAmountPerMember: number,
+    notes?: string
+  ): TransportCollection {
+    const all = this.getTransportCollections();
+    const newCol: TransportCollection = {
+      id: `trans-${Date.now()}`,
+      gatheringId,
+      title,
+      titleAm,
+      destination,
+      agreedAmountPerMember,
+      notes,
+      status: 'open',
+      payments: [],
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [newCol, ...all];
+    localStorage.setItem(KEY_TRANSPORT, JSON.stringify(updated));
+    return newCol;
+  }
+
+  recordTransportPayment(
+    collectionId: string,
+    memberId: string,
+    amount: number,
+    note?: string,
+    recordedBy: string = 'Natnael Endale'
+  ): TransportCollection | null {
+    const all = this.getTransportCollections();
+    const target = all.find((c) => c.id === collectionId);
+    if (!target) return null;
+
+    const payment: TransportPayment = {
+      id: `tpay-${Date.now()}`,
+      memberId,
+      amount,
+      paidAt: new Date().toISOString(),
+      note,
+      recordedBy,
+    };
+
+    const updatedList = all.map((c) => {
+      if (c.id !== collectionId) return c;
+      return {
+        ...c,
+        payments: [payment, ...c.payments],
+      };
+    });
+
+    localStorage.setItem(KEY_TRANSPORT, JSON.stringify(updatedList));
+
+    this.recordSharedFundTransaction({
+      type: 'income',
+      category: 'transport',
+      amount,
+      purpose: `Transport collection for ${target.destination} (Member ${memberId})`,
+      purposeAm: `የጉዞ መጓጓዣ መዋጮ ለ${target.destination} (አባል ${memberId})`,
+      date: new Date().toISOString().split('T')[0],
+      relatedGatheringId: target.gatheringId,
+      recordedBy,
+    });
+
+    return updatedList.find((c) => c.id === collectionId) || null;
+  }
+
+  // --- SHARED FUND LEDGER ---
+  getSharedFundTransactions(): SharedFundTransaction[] {
+    const data = localStorage.getItem(KEY_SHARED_FUND);
+    if (data) {
+      try {
+        return JSON.parse(data);
+      } catch {
+        return INITIAL_SHARED_FUND_TRANSACTIONS;
+      }
+    }
+    return INITIAL_SHARED_FUND_TRANSACTIONS;
+  }
+
+  recordSharedFundTransaction(data: Omit<SharedFundTransaction, 'id' | 'createdAt'>): SharedFundTransaction {
+    const all = this.getSharedFundTransactions();
+    const newTx: SharedFundTransaction = {
+      ...data,
+      id: `fund-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [newTx, ...all];
+    localStorage.setItem(KEY_SHARED_FUND, JSON.stringify(updated));
+    return newTx;
+  }
+
+  // Fund balance = recorded income - recorded expenses
+  getSharedFundBalance(): { income: number; expenses: number; balance: number } {
+    const all = this.getSharedFundTransactions();
+    const income = all
+      .filter((t) => t.type === 'income')
+      .reduce((s, t) => s + (t.amount || 0), 0);
+    const expenses = all
+      .filter((t) => t.type === 'expense')
+      .reduce((s, t) => s + (t.amount || 0), 0);
+
+    return {
+      income: Math.round(income * 100) / 100,
+      expenses: Math.round(expenses * 100) / 100,
+      balance: Math.round((income - expenses) * 100) / 100,
+    };
+  }
+
+  // --- SPENDING PROPOSALS & MAJORITY VOTE ---
+  getSpendingProposals(): SpendingProposal[] {
+    const data = localStorage.getItem(KEY_PROPOSALS);
+    if (data) {
+      try {
+        return JSON.parse(data);
+      } catch {
+        return INITIAL_SPENDING_PROPOSALS;
+      }
+    }
+    return INITIAL_SPENDING_PROPOSALS;
+  }
+
+  createSpendingProposal(data: {
+    title: string;
+    titleAm: string;
+    description: string;
+    descriptionAm?: string;
+    amount: number;
+    category: string;
+    proposedBy: string;
+    proposedByName: string;
+    expiresAt?: string;
+  }): SpendingProposal {
+    const all = this.getSpendingProposals();
+    const newProp: SpendingProposal = {
+      id: `prop-${Date.now()}`,
+      ...data,
+      status: 'active',
+      votes: [],
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [newProp, ...all];
+    localStorage.setItem(KEY_PROPOSALS, JSON.stringify(updated));
+    return newProp;
+  }
+
+  voteOnProposal(
+    proposalId: string,
+    memberId: string,
+    vote: 'favor' | 'against',
+    totalActiveMembers: number = 11
+  ): { proposal: SpendingProposal; approved: boolean; error?: string } {
+    const all = this.getSpendingProposals();
+    const target = all.find((p) => p.id === proposalId);
+    if (!target) return { proposal: null as any, approved: false, error: 'Proposal not found' };
+
+    if (target.status !== 'active') {
+      return { proposal: target, approved: target.status === 'approved', error: 'Proposal is no longer active' };
+    }
+
+    if (target.votes.some((v) => v.memberId === memberId)) {
+      return { proposal: target, approved: false, error: 'Duplicate vote: member has already voted' };
+    }
+
+    const newVotes = [...target.votes, { memberId, vote, votedAt: new Date().toISOString() }];
+    const favorVotes = newVotes.filter((v) => v.vote === 'favor').length;
+    // Majority rule: strictly > 50% of active members (e.g. > 5.5 = 6 out of 11)
+    const majorityThreshold = totalActiveMembers / 2;
+    const isApproved = favorVotes > majorityThreshold;
+
+    const newStatus = isApproved ? 'approved' : target.status;
+
+    const updatedList = all.map((p) =>
+      p.id === proposalId
+        ? { ...p, votes: newVotes, status: newStatus as any }
+        : p
+    );
+    localStorage.setItem(KEY_PROPOSALS, JSON.stringify(updatedList));
+
+    const updatedProp = updatedList.find((p) => p.id === proposalId)!;
+    return { proposal: updatedProp, approved: isApproved };
+  }
+
+  executeProposalExpense(
+    proposalId: string,
+    recordedBy: string = 'Sawiros Abiy'
+  ): { success: boolean; transaction?: SharedFundTransaction; error?: string } {
+    const all = this.getSpendingProposals();
+    const target = all.find((p) => p.id === proposalId);
+    if (!target) return { success: false, error: 'Proposal not found' };
+    if (target.status !== 'approved') return { success: false, error: 'Only approved proposals can be executed' };
+
+    const { balance } = this.getSharedFundBalance();
+    if (balance < target.amount) {
+      return { success: false, error: `Insufficient fund balance (${balance} ETB available, ${target.amount} ETB needed)` };
+    }
+
+    const tx = this.recordSharedFundTransaction({
+      type: 'expense',
+      category: 'expense',
+      amount: target.amount,
+      purpose: target.title,
+      purposeAm: target.titleAm,
+      date: new Date().toISOString().split('T')[0],
+      relatedProposalId: proposalId,
+      recordedBy,
+      notes: `Executed from approved majority-vote proposal: ${target.description}`,
+    });
+
+    const updatedList = all.map((p) =>
+      p.id === proposalId ? { ...p, status: 'executed' as const, targetExpenseId: tx.id } : p
+    );
+    localStorage.setItem(KEY_PROPOSALS, JSON.stringify(updatedList));
+
+    return { success: true, transaction: tx };
+  }
+
+  // --- PAINTING ROTATION & HOSTING ---
+  getPaintingRotation(): PaintingRotationState {
+    const data = localStorage.getItem(KEY_PAINTING_ROTATION);
+    if (data) {
+      try {
+        return JSON.parse(data);
+      } catch {
+        return INITIAL_PAINTING_ROTATION;
+      }
+    }
+    return INITIAL_PAINTING_ROTATION;
+  }
+
+  recordHostingSwap(
+    gatheringId: string,
+    originalHostId: string,
+    substituteHostId: string,
+    reason: string,
+    approvedBy: string
+  ): PaintingRotationState {
+    const current = this.getPaintingRotation();
+    const swap: HostingSwapRecord = {
+      id: `swap-${Date.now()}`,
+      gatheringId,
+      originalHostId,
+      substituteHostId,
+      reason,
+      reasonAm: `የተፈቀደ አስተናጋጅ ቅያሪ: ${reason}`,
+      approvedBy,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Swap updates scheduled host, but PRESERVES nextAssignedHostId and rotationOrder!
+    const updated: PaintingRotationState = {
+      ...current,
+      scheduledHostId: substituteHostId,
+      swaps: [swap, ...current.swaps],
+    };
+    localStorage.setItem(KEY_PAINTING_ROTATION, JSON.stringify(updated));
+
+    // Also update current Gathering record's host and notes
+    const gatherings = this.getAllGatherings();
+    const updatedGatherings = gatherings.map((g) => {
+      if (g.id === gatheringId) {
+        return {
+          ...g,
+          assignedHostId: originalHostId,
+          scheduledHostId: substituteHostId,
+          notes: `${g.notes || ''} [የአስተናጋጅ ቅያሪ: በ${approvedBy} ጸድቋል]`.trim(),
+        };
+      }
+      return g;
+    });
+    localStorage.setItem(KEY_GATHERINGS, JSON.stringify(updatedGatherings));
+
+    return updated;
+  }
+
+  completeGatheringAndHandover(
+    gatheringId: string,
+    fromMemberId: string,
+    toMemberId: string,
+    recordedBy: string
+  ): PaintingRotationState {
+    const current = this.getPaintingRotation();
+    const handover: PaintingHandoverRecord = {
+      id: `ho-${Date.now()}`,
+      fromMemberId,
+      toMemberId,
+      gatheringId,
+      confirmedDate: new Date().toISOString(),
+      recordedBy,
+    };
+
+    // Move to next in rotation order
+    const order = current.rotationOrder;
+    const currentIndex = order.indexOf(toMemberId);
+    const nextIndex = (currentIndex + 1) % order.length;
+    const nextInLine = order[nextIndex];
+
+    const updated: PaintingRotationState = {
+      ...current,
+      currentHolderId: toMemberId,
+      nextAssignedHostId: nextInLine,
+      scheduledHostId: nextInLine,
+      handovers: [handover, ...current.handovers],
+    };
+    localStorage.setItem(KEY_PAINTING_ROTATION, JSON.stringify(updated));
+    return updated;
+  }
+
+  // --- INVITATIONS & ACCOUNT ACTIVATION ---
+  getInvitations(): MemberInvitation[] {
+    const data = localStorage.getItem(KEY_INVITATIONS);
+    if (data) {
+      try {
+        return JSON.parse(data);
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }
+
+  createInvitation(memberId: string, createdBy: string, expiresInHours: number = 72): MemberInvitation {
+    const all = this.getInvitations();
+    const code = 'MAH-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + expiresInHours * 3600 * 1000).toISOString();
+
+    const inv: MemberInvitation = {
+      id: `inv-${Date.now()}`,
+      memberId,
+      code,
+      createdBy,
+      createdAt: now.toISOString(),
+      expiresAt,
+      isUsed: false,
+    };
+
+    const updated = [inv, ...all];
+    localStorage.setItem(KEY_INVITATIONS, JSON.stringify(updated));
+    return inv;
+  }
+
+  redeemInvitation(code: string): { success: boolean; memberId?: string; error?: string } {
+    const all = this.getInvitations();
+    const inv = all.find((i) => i.code.trim().toUpperCase() === code.trim().toUpperCase());
+    if (!inv) {
+      return { success: false, error: 'Invalid invitation code / ልክ ያልሆነ የግብዣ ኮድ' };
+    }
+
+    if (inv.isUsed) {
+      return { success: false, error: 'Invitation code already used / ይሄ የግብዣ ኮድ ቀድሞ አገልግሎት ላይ ውሏል' };
+    }
+
+    if (new Date() > new Date(inv.expiresAt)) {
+      return { success: false, error: 'Invitation code has expired / የግብዣው ኮድ ጊዜው አልፏል' };
+    }
+
+    const updated = all.map((i) =>
+      i.id === inv.id ? { ...i, isUsed: true, usedAt: new Date().toISOString() } : i
+    );
+    localStorage.setItem(KEY_INVITATIONS, JSON.stringify(updated));
+
+    return { success: true, memberId: inv.memberId };
   }
 
   // --- AUDIO VALIDATION HELPER ---

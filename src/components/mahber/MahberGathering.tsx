@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../context/AuthContext';
-import { Gathering, AttendanceRecord, Member, MahberHistoryGathering } from '../../types';
+import { Gathering, AttendanceRecord, Member, MahberHistoryGathering, GatheringAttendanceEntry } from '../../types';
 import { mahberService } from '../../services/mahberService';
 import { EthiopianCross } from '../common/EthiopianCross';
 import { EmptyView } from '../common/StateViews';
@@ -17,6 +17,9 @@ import {
   ChevronRight,
   BookOpen,
   History,
+  Lock,
+  ShieldCheck,
+  Edit3,
 } from 'lucide-react';
 
 interface MahberGatheringProps {
@@ -26,6 +29,7 @@ interface MahberGatheringProps {
   history?: MahberHistoryGathering[];
   onOpenMezmur?: (mezmurId: string) => void;
   onRefreshHistory?: () => void;
+  onNavigateTab?: (tab: 'home' | 'mahber' | 'room' | 'mezmur' | 'more' | 'admin') => void;
 }
 
 export const MahberGathering: React.FC<MahberGatheringProps> = ({
@@ -35,6 +39,7 @@ export const MahberGathering: React.FC<MahberGatheringProps> = ({
   history = [],
   onOpenMezmur,
   onRefreshHistory,
+  onNavigateTab,
 }) => {
   const { t, language } = useLanguage();
   const { isAdmin } = useAuth();
@@ -58,10 +63,56 @@ export const MahberGathering: React.FC<MahberGatheringProps> = ({
   const activeMembers = allMembers.filter((m) => !m.isDeactivated);
   const totalCount = activeMembers.length;
 
+  // Live Gathering Attendance State (auto-updates when admin saves)
+  const [actualAttendanceMap, setActualAttendanceMap] = useState<Record<string, GatheringAttendanceEntry>>(() =>
+    mahberService.getActualAttendance(gathering.id)
+  );
+
+  useEffect(() => {
+    const refreshActual = () => {
+      if (gathering) {
+        setActualAttendanceMap(mahberService.getActualAttendance(gathering.id));
+      }
+    };
+
+    refreshActual();
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'mahber_actual_attendance_v1' || e.key === 'mahber_history_v3') {
+        refreshActual();
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('mahber_attendance_updated', refreshActual);
+    window.addEventListener('mahber_history_updated', refreshActual);
+
+    let bc: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      bc = new BroadcastChannel('mahber_attendance_channel');
+      bc.onmessage = refreshActual;
+    }
+
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('mahber_attendance_updated', refreshActual);
+      window.removeEventListener('mahber_history_updated', refreshActual);
+      bc?.close();
+    };
+  }, [gathering?.id]);
+
+  const hasActualAttendance = Object.keys(actualAttendanceMap).length > 0;
+  const actualPresentCount = Object.values(actualAttendanceMap).filter((e) => e.status === 'PRESENT').length;
+  const actualLateCount = Object.values(actualAttendanceMap).filter((e) => e.status === 'LATE').length;
+  const actualExcusedCount = Object.values(actualAttendanceMap).filter((e) => e.status === 'EXCUSED').length;
+  const actualAbsentCount = Object.values(actualAttendanceMap).filter((e) => e.status === 'ABSENT').length;
+  const totalAttendedCount = actualPresentCount + actualLateCount;
+
   const comingCount = attendance.filter((a) => a.status === 'coming').length;
   const cantComeCount = attendance.filter((a) => a.status === 'cant_come').length;
   const noResponseCount = Math.max(0, totalCount - comingCount - cantComeCount);
-  const attendancePercentage = totalCount > 0 ? Math.round((comingCount / totalCount) * 100) : 0;
+  const displayCount = hasActualAttendance ? totalAttendedCount : comingCount;
+  const attendancePercentage = totalCount > 0 ? Math.round((displayCount / totalCount) * 100) : 0;
 
   // Month days for Meskerem (1 to 30)
   const meskeremDays = Array.from({ length: 30 }, (_, i) => i + 1);
@@ -102,7 +153,7 @@ export const MahberGathering: React.FC<MahberGatheringProps> = ({
               : 'text-gray-400 dark:text-gray-400 light:text-gray-600 hover:text-white'
           }`}
         >
-          {t.attendanceRoster} ({comingCount}/{totalCount})
+          {t.attendanceRoster} ({displayCount}/{totalCount})
         </button>
         <button
           onClick={() => setActiveTab('history')}
@@ -316,47 +367,103 @@ export const MahberGathering: React.FC<MahberGatheringProps> = ({
         </div>
       )}
 
-      {/* Attendance Roster View */}
+      {/* Attendance Roster View (Read-Only for Members, Admin Editable via Dashboard) */}
       {activeTab === 'roster' && (
         <div className="space-y-4 animate-fade-in">
-          <div className="rounded-3xl p-4 bg-[#201D19] dark:bg-[#201D19] light:bg-[#FFFDF8] border border-[#B89A5A]/20 shadow-sacred space-y-3">
-            <div className="flex items-center justify-between border-b border-[#B89A5A]/15 pb-2">
-              <h3 className="text-sm font-bold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E]">
-                {t.attendanceRoster}
-              </h3>
-              <div className="text-xs font-medium text-[#315C48] dark:text-[#529575]">
-                {comingCount} / {totalCount} {t.statusComing}
+          {/* Permission / Security Notice Banner */}
+          <div className="rounded-2xl p-3 bg-[#201D19] dark:bg-[#201D19] light:bg-[#FFFDF8] border border-[#B89A5A]/25 shadow-sacred flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <Lock size={15} className="text-[#B89A5A] shrink-0" />
+              <div className="min-w-0">
+                <span className="font-semibold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E]">
+                  {language === 'am' ? 'የተሳትፎ መዝገብ (ለንባብ ብቻ)' : 'Attendance Roster (Read-Only)'}
+                </span>
+                <p className="text-[10px] text-gray-400">
+                  {language === 'am'
+                    ? 'አባላት ማየት ብቻ ይችላሉ፤ ማስተካከል የሚችሉት አስተዳዳሪዎች ብቻ ናቸው።'
+                    : 'All members can view attendance. Only admins can record/edit.'}
+                </p>
               </div>
             </div>
 
-            {/* Stat Row */}
-            <div className="grid grid-cols-3 gap-2 text-center text-xs">
-              <div className="p-2 rounded-xl bg-[#315C48]/15 border border-[#315C48]/30">
-                <div className="font-bold text-[#315C48]">{comingCount}</div>
-                <div className="text-[10px] text-gray-400">{t.statusComing}</div>
-              </div>
-              <div className="p-2 rounded-xl bg-[#6F2630]/15 border border-[#6F2630]/30">
-                <div className="font-bold text-[#6F2630]">{cantComeCount}</div>
-                <div className="text-[10px] text-gray-400">{t.statusCantCome}</div>
-              </div>
-              <div className="p-2 rounded-xl bg-gray-500/10 border border-gray-500/20">
-                <div className="font-bold text-gray-400">{noResponseCount}</div>
-                <div className="text-[10px] text-gray-400">{t.statusNoResponse}</div>
+            {isAdmin && onNavigateTab && (
+              <button
+                onClick={() => onNavigateTab('admin')}
+                className="px-2.5 py-1 rounded-xl bg-[#6F2630] hover:bg-[#8A2F3D] text-white text-[11px] font-bold transition flex items-center gap-1 shadow-sm shrink-0"
+              >
+                <Edit3 size={12} />
+                <span>{language === 'am' ? 'አስተዳድር' : 'Edit Live'}</span>
+              </button>
+            )}
+          </div>
+
+          <div className="rounded-3xl p-4 bg-[#201D19] dark:bg-[#201D19] light:bg-[#FFFDF8] border border-[#B89A5A]/20 shadow-sacred space-y-3">
+            <div className="flex items-center justify-between border-b border-[#B89A5A]/15 pb-2">
+              <h3 className="text-sm font-bold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E]">
+                {hasActualAttendance
+                  ? (language === 'am' ? 'የስብሰባው የተሳትፎ መዝገብ' : 'Recorded Gathering Attendance')
+                  : t.attendanceRoster}
+              </h3>
+              <div className="text-xs font-semibold text-[#315C48] dark:text-[#529575]">
+                {hasActualAttendance ? totalAttendedCount : comingCount} / {totalCount}{' '}
+                {hasActualAttendance ? (language === 'am' ? 'ተገኝተዋል' : 'Attended') : t.statusComing}
               </div>
             </div>
+
+            {/* Stat Row - 4 Status Breakdown if actual attendance recorded, else RSVP */}
+            {hasActualAttendance ? (
+              <div className="grid grid-cols-4 gap-1.5 text-center text-xs">
+                <div className="p-2 rounded-xl bg-[#315C48]/15 border border-[#315C48]/30">
+                  <div className="font-bold text-[#427A60] dark:text-[#529575] text-sm">{actualPresentCount}</div>
+                  <div className="text-[10px] text-gray-400">🟢 {language === 'am' ? 'ተገኝቷል' : 'Present'}</div>
+                </div>
+                <div className="p-2 rounded-xl bg-[#E07A24]/15 border border-[#E07A24]/30">
+                  <div className="font-bold text-[#E07A24] text-sm">{actualLateCount}</div>
+                  <div className="text-[10px] text-gray-400">🟠 {language === 'am' ? 'አርፍዷል' : 'Late'}</div>
+                </div>
+                <div className="p-2 rounded-xl bg-[#B89A5A]/15 border border-[#B89A5A]/30">
+                  <div className="font-bold text-[#D3BA7E] text-sm">{actualExcusedCount}</div>
+                  <div className="text-[10px] text-gray-400">🟡 {language === 'am' ? 'በፈቃድ' : 'Excused'}</div>
+                </div>
+                <div className="p-2 rounded-xl bg-[#6F2630]/15 border border-[#6F2630]/30">
+                  <div className="font-bold text-[#D98A94] text-sm">{actualAbsentCount}</div>
+                  <div className="text-[10px] text-gray-400">🔴 {language === 'am' ? 'ያልተገኘ' : 'Absent'}</div>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="p-2 rounded-xl bg-[#315C48]/15 border border-[#315C48]/30">
+                  <div className="font-bold text-[#315C48]">{comingCount}</div>
+                  <div className="text-[10px] text-gray-400">{t.statusComing}</div>
+                </div>
+                <div className="p-2 rounded-xl bg-[#6F2630]/15 border border-[#6F2630]/30">
+                  <div className="font-bold text-[#6F2630]">{cantComeCount}</div>
+                  <div className="text-[10px] text-gray-400">{t.statusCantCome}</div>
+                </div>
+                <div className="p-2 rounded-xl bg-gray-500/10 border border-gray-500/20">
+                  <div className="font-bold text-gray-400">{noResponseCount}</div>
+                  <div className="text-[10px] text-gray-400">{t.statusNoResponse}</div>
+                </div>
+              </div>
+            )}
 
             {/* Progress bar */}
             <div className="w-full bg-gray-800 rounded-full h-2.5 overflow-hidden border border-white/5">
               <div
                 className="bg-[#315C48] h-full rounded-full transition-all duration-500"
-                style={{ width: `${attendancePercentage}%` }}
+                style={{
+                  width: `${
+                    totalCount > 0
+                      ? Math.round(((hasActualAttendance ? totalAttendedCount : comingCount) / totalCount) * 100)
+                      : 0
+                  }%`,
+                }}
               />
             </div>
 
-            {/* Members Attendance List (Strict Privacy Protected) */}
+            {/* Members Attendance List (Strictly Read-Only with Privacy Protection) */}
             <div className="divide-y divide-[#B89A5A]/10">
               {activeMembers.map((member) => {
-                const actualAttendanceMap = mahberService.getActualAttendance(gathering.id);
                 const actualStatus = actualAttendanceMap[member.id];
                 const record = attendance.find((a) => a.memberId === member.id);
                 const status = record?.status || 'no_response';
@@ -382,7 +489,7 @@ export const MahberGathering: React.FC<MahberGatheringProps> = ({
                       </div>
                     </div>
 
-                    {/* Status Badge (Shows recorded Actual Attendance if available, else RSVP) */}
+                    {/* Status Badge (Read-Only) */}
                     <div className="text-right">
                       {actualStatus ? (
                         actualStatus.status === 'PRESENT' ? (

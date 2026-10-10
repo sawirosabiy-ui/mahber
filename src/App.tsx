@@ -26,6 +26,7 @@ import { AdminDashboard } from './components/admin/AdminDashboard';
 import { WelcomeSplash } from './components/welcome/WelcomeSplash';
 import { LoginView } from './components/auth/LoginView';
 import { NotificationCenter } from './components/notifications/NotificationCenter';
+import { AdminPasswordModal } from './components/admin/AdminPasswordModal';
 import { LoadingView, ErrorView } from './components/common/StateViews';
 import { ShieldAlert, LogOut, ArrowLeft } from 'lucide-react';
 import { MessageReplyInfo, RoomMessageType } from './types';
@@ -40,6 +41,12 @@ const MahberAppContent: React.FC = () => {
     return localStorage.getItem('mahber_entered') === 'true';
   });
   const [activeTab, setActiveTab] = useState<NavTab>('home');
+  const [previousTab, setPreviousTab] = useState<NavTab>('home');
+
+  // Admin Security Unlock State (persisted in sessionStorage)
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => {
+    return mahberService.isAdminSessionUnlocked();
+  });
 
   // Notification center modal state
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
@@ -85,6 +92,50 @@ const MahberAppContent: React.FC = () => {
       loadData();
     }
   }, [isAuthenticated, currentUser.id, isAdmin]);
+
+  // Real-time synchronization for concurrent messages and history updates
+  useEffect(() => {
+    const handleHistoryUpdate = () => {
+      setHistory(mahberService.getHistory());
+    };
+    const handleChatUpdate = () => {
+      setMessages(mahberService.getMessages());
+    };
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'mahber_history_v3') {
+        handleHistoryUpdate();
+      }
+      if (e.key === 'mahber_messages_v5') {
+        handleChatUpdate();
+      }
+    };
+
+    window.addEventListener('mahber_history_updated', handleHistoryUpdate);
+    window.addEventListener('mahber_chat_updated', handleChatUpdate);
+    window.addEventListener('storage', handleStorage);
+
+    let bcHist: BroadcastChannel | null = null;
+    let bcChat: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      bcHist = new BroadcastChannel('mahber_history_channel');
+      bcHist.onmessage = handleHistoryUpdate;
+      bcChat = new BroadcastChannel('mahber_chat_channel');
+      bcChat.onmessage = handleChatUpdate;
+    }
+
+    return () => {
+      window.removeEventListener('mahber_history_updated', handleHistoryUpdate);
+      window.removeEventListener('mahber_chat_updated', handleChatUpdate);
+      window.removeEventListener('storage', handleStorage);
+      bcHist?.close();
+      bcChat?.close();
+    };
+  }, []);
+
+  const handleSelectTab = (tab: NavTab) => {
+    setPreviousTab(activeTab);
+    setActiveTab(tab);
+  };
 
   const handleEnterApp = () => {
     setHasEntered(true);
@@ -195,7 +246,7 @@ const MahberAppContent: React.FC = () => {
     <div className="min-h-screen bg-[#0e0c0b] text-[#F5EFE3] flex flex-col items-center">
       {/* Main Mobile App Container */}
       <div
-        className="w-full max-w-md min-h-screen bg-[#151311] dark:bg-[#151311] light:bg-[#F5EFE7] shadow-2xl relative flex flex-col border-x border-[#B89A5A]/15 pb-20"
+        className="w-full max-w-md min-h-screen bg-[#151311] dark:bg-[#151311] light:bg-[#F7F7F3] shadow-2xl relative flex flex-col border-x border-[#B89A5A]/15 pb-20"
       >
         {/* Top App Bar with Notification Bell */}
         <AppBar
@@ -234,6 +285,7 @@ const MahberAppContent: React.FC = () => {
                     setActiveTab('mezmur');
                   }}
                   onRefreshHistory={() => setHistory(mahberService.getHistory())}
+                  onNavigateTab={(tab) => handleSelectTab(tab)}
                 />
               )}
 
@@ -267,9 +319,9 @@ const MahberAppContent: React.FC = () => {
                 />
               )}
 
-              {/* PROTECTED ADMIN ROUTE BARRIER (Enforces 403 / Access Denied) */}
+              {/* ADMIN ACCESS WITH PASSWORD GATE (Requires mahber@27) */}
               {activeTab === 'admin' && (
-                isAdmin ? (
+                isAdminUnlocked ? (
                   <AdminDashboard
                     gathering={gathering}
                     attendance={attendance}
@@ -279,6 +331,10 @@ const MahberAppContent: React.FC = () => {
                     onRecordPayment={handleRecordPayment}
                     onSetCurrentMezmur={handleSetCurrentMezmur}
                     onAddMezmur={handleAddMezmur}
+                    onArchiveMezmur={(mezmurId) => {
+                      const updated = mahberService.archiveMezmur(mezmurId);
+                      setMezmurs([...updated]);
+                    }}
                     onUpdateGathering={(g) => setGathering(g)}
                     onCreateGathering={async (newGData) => {
                       const created = mahberService.createGathering(newGData);
@@ -293,30 +349,23 @@ const MahberAppContent: React.FC = () => {
                       const updatedAttendance = await mahberDataService.getAttendance(currentUser.id, isAdmin);
                       setAttendance(updatedAttendance.data);
                     }}
+                    onRefreshHistory={() => setHistory(mahberService.getHistory())}
+                    onLockAdmin={() => {
+                      mahberService.setAdminSessionUnlocked(false);
+                      setIsAdminUnlocked(false);
+                      setActiveTab('home');
+                    }}
                   />
                 ) : (
-                  <div className="py-20 px-4 text-center space-y-4 animate-fade-in">
-                    <div className="w-14 h-14 rounded-full bg-[#6F2630]/20 border border-[#6F2630] flex items-center justify-center text-[#D98A94] mx-auto">
-                      <ShieldAlert size={28} />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-bold text-[#F5EFE3]">
-                        {language === 'am' ? '403: የተከለከለ ገጽ' : '403: Unauthorized Access'}
-                      </h3>
-                      <p className="text-xs text-gray-400 mt-1 max-w-xs mx-auto">
-                        {language === 'am'
-                          ? 'ይህ ገጽ ለሁለቱ የተፈቀደላቸው የማኅበሩ አስተዳዳሪዎች ብቻ የተከለለ ነው።'
-                          : 'This management section is strictly reserved for the two designated Mahber administrators.'}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setActiveTab('home')}
-                      className="px-4 py-2 rounded-xl bg-[#6F2630] text-white text-xs font-semibold hover:bg-[#8C3542] transition inline-flex items-center gap-1.5"
-                    >
-                      <ArrowLeft size={14} />
-                      <span>{language === 'am' ? 'ወደ ዋና ገጽ ተመለስ' : 'Return to Home'}</span>
-                    </button>
-                  </div>
+                  <AdminPasswordModal
+                    isOpen={true}
+                    onSuccess={() => {
+                      setIsAdminUnlocked(true);
+                    }}
+                    onCancel={() => {
+                      setActiveTab(previousTab || 'home');
+                    }}
+                  />
                 )
               )}
             </>
@@ -326,7 +375,7 @@ const MahberAppContent: React.FC = () => {
         {/* Mobile Bottom Navigation with unread badge */}
         <BottomNav
           activeTab={activeTab}
-          onSelectTab={(tab) => setActiveTab(tab)}
+          onSelectTab={handleSelectTab}
           roomUnreadCount={mahberService.getUnreadCount(currentUser.id)}
         />
 

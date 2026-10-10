@@ -20,6 +20,11 @@ import {
   Play,
   ArrowRight,
   Sparkles,
+  Shield,
+  ThumbsUp,
+  ThumbsDown,
+  BookOpen,
+  DollarSign,
 } from 'lucide-react';
 
 interface MemberHomeProps {
@@ -40,9 +45,14 @@ export const MemberHome: React.FC<MemberHomeProps> = ({
   onNavigateTab,
 }) => {
   const { t, language } = useLanguage();
-  const { currentUser } = useAuth();
+  const { currentUser, allMembers } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [rsvpToast, setRsvpToast] = useState<string | null>(null);
+
+  // Sacred Painting Rotation & Mahber V1 Data
+  const [paintingRotation, setPaintingRotation] = useState(() => mahberService.getPaintingRotation());
+  const [userPenalties, setUserPenalties] = useState(() => mahberService.getMemberPenalties(currentUser.id));
+  const [proposals, setProposals] = useState(() => mahberService.getSpendingProposals());
 
   // Live countdown state based on local device time
   const [countdownLabel, setCountdownLabel] = useState<{ am: string; en: string }>({
@@ -51,17 +61,22 @@ export const MemberHome: React.FC<MemberHomeProps> = ({
   });
 
   useEffect(() => {
+    setPaintingRotation(mahberService.getPaintingRotation());
+    setUserPenalties(mahberService.getMemberPenalties(currentUser.id));
+    setProposals(mahberService.getSpendingProposals());
+  }, [currentUser.id]);
+
+  useEffect(() => {
     if (!gathering) return;
 
     const updateCountdown = () => {
-      // Approximate gathering Gregorian date (e.g. October 7, 2026)
       const targetDate = new Date(gathering.gregDateRaw || '2026-10-07T18:00:00');
       const res = calculateGatheringCountdown(targetDate, gathering.time);
       setCountdownLabel({ am: res.labelAm, en: res.labelEn });
     };
 
     updateCountdown();
-    const interval = setInterval(updateCountdown, 60000); // refresh every minute
+    const interval = setInterval(updateCountdown, 60000);
     return () => clearInterval(interval);
   }, [gathering]);
 
@@ -268,6 +283,206 @@ export const MemberHome: React.FC<MemberHomeProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Personal Outstanding Penalties Banner (if any) */}
+          {userPenalties.filter((p) => p.status === 'pending').length > 0 && (
+            <div className="rounded-2xl p-3.5 bg-[#6F2630]/25 border border-[#6F2630]/50 text-xs space-y-1.5 animate-fade-in">
+              <div className="flex items-center justify-between text-[#E5DCD0] font-bold">
+                <span className="flex items-center gap-1.5">
+                  <AlertCircle size={15} className="text-[#D98A94]" />
+                  <span>{language === 'am' ? 'ያልተከፈለ ቅጣት አለብዎት' : 'Outstanding Penalties'}</span>
+                </span>
+                <span className="text-[#B89A5A]">
+                  {userPenalties.filter((p) => p.status === 'pending').reduce((s, p) => s + p.amount, 0)} {t.currencyEtb}
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-300">
+                {language === 'am'
+                  ? 'የማርፈድ (100 ብር) ወይም ያለፈቃድ የመቅረት (200 ብር) ቅጣት ተመዝግቧል። እባክዎ ለገንዘብ ያዥ ናትናኤል እንዳለ ወይም ሳዊሮስ አብይ ያስረክቡ።'
+                  : 'Late arrival (100 ETB) or absence (200 ETB) recorded. Please settle with Finance Admin.'}
+              </p>
+            </div>
+          )}
+
+          {/* Sacred Painting Rotation & Host Info Card */}
+          {(() => {
+            const holder = allMembers.find((m) => m.id === paintingRotation.currentHolderId) || allMembers[0];
+            const nextHost = allMembers.find((m) => m.id === paintingRotation.nextAssignedHostId) || allMembers[1];
+            const scheduledHost = allMembers.find((m) => m.id === (gathering.scheduledHostId || paintingRotation.scheduledHostId)) || nextHost;
+            const hasSwap = gathering.scheduledHostId && gathering.scheduledHostId !== paintingRotation.nextAssignedHostId;
+
+            return (
+              <div className="rounded-3xl p-4 bg-[#201D19] dark:bg-[#201D19] light:bg-[#FFFDF8] border border-[#B89A5A]/25 shadow-sacred space-y-3">
+                <div className="flex items-center justify-between border-b border-[#B89A5A]/15 pb-2">
+                  <div className="flex items-center gap-2 text-xs font-bold text-[#F5EFE3]">
+                    <Shield size={16} className="text-[#B89A5A]" />
+                    <span>{language === 'am' ? 'የተቀደሱ ሥዕላት ዙር እና አስተናጋጅ' : 'Sacred Painting Rotation & Host'}</span>
+                  </div>
+                  {hasSwap && (
+                    <span className="px-2 py-0.5 rounded-full bg-[#B89A5A]/20 border border-[#B89A5A]/40 text-[10px] text-[#B89A5A] font-semibold">
+                      {language === 'am' ? 'የአስተናጋጅ ቅያሪ' : 'Host Swap'}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  {/* Current Holder */}
+                  <div className="p-2.5 rounded-2xl bg-[#29251F]/70 border border-[#B89A5A]/15 flex items-center gap-2">
+                    <img
+                      src={holder?.avatarUrl}
+                      alt={holder?.name}
+                      className="w-8 h-8 rounded-full object-cover border border-[#B89A5A]/30 shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="text-[10px] text-gray-400">
+                        {language === 'am' ? 'ሥዕላቱን የያዘው' : 'Painting Holder'}
+                      </div>
+                      <div className="font-semibold truncate text-[#F5EFE3]">
+                        {language === 'am' ? holder?.amharicName : holder?.name}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Scheduled Host */}
+                  <div className="p-2.5 rounded-2xl bg-[#29251F]/70 border border-[#B89A5A]/15 flex items-center gap-2">
+                    <img
+                      src={scheduledHost?.avatarUrl}
+                      alt={scheduledHost?.name}
+                      className="w-8 h-8 rounded-full object-cover border border-[#B89A5A]/30 shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="text-[10px] text-gray-400">
+                        {language === 'am' ? 'ቀጣይ አስተናጋጅ' : 'Upcoming Host'}
+                      </div>
+                      <div className="font-semibold truncate text-[#F5EFE3]">
+                        {language === 'am' ? scheduledHost?.amharicName : scheduledHost?.name}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Spiritual & Scripture Teaching Card */}
+          {(gathering.biblePassage || gathering.teachingNotes) && (
+            <div className="rounded-3xl p-4 bg-[#201D19] border border-[#B89A5A]/20 shadow-sacred space-y-2.5">
+              <div className="flex items-center gap-2 text-xs font-bold text-[#F5EFE3] border-b border-[#B89A5A]/15 pb-2">
+                <BookOpen size={16} className="text-[#B89A5A]" />
+                <span>{language === 'am' ? 'የመንፈሳዊ ንባብ እና ትምህርት መርሃ-ግብር' : 'Scripture Reading & Teaching'}</span>
+              </div>
+              {gathering.biblePassage && (
+                <div className="text-xs">
+                  <span className="text-[#B89A5A] font-semibold">
+                    {language === 'am' ? 'የዕለቱ ምንባብ: ' : 'Passage: '}
+                  </span>
+                  <span className="text-[#F5EFE3]">{gathering.biblePassage}</span>
+                </div>
+              )}
+              {gathering.teachingNotes && (
+                <p className="text-[11px] text-gray-300 leading-relaxed italic bg-white/5 p-2.5 rounded-xl border border-white/5">
+                  "{gathering.teachingNotes}"
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Spending Proposals & Majority Voting (Shared Fund) */}
+          {proposals.filter((p) => p.status === 'active').length > 0 && (
+            <div className="rounded-3xl p-4 bg-[#201D19] border border-[#B89A5A]/25 shadow-sacred space-y-3">
+              <div className="flex items-center justify-between border-b border-[#B89A5A]/15 pb-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-[#F5EFE3]">
+                  <DollarSign size={16} className="text-[#B89A5A]" />
+                  <span>{language === 'am' ? 'የጋራ ፈንድ የወጪ ውሳኔ (ድምጽ ይስጡ)' : 'Shared Fund Spending Proposals'}</span>
+                </div>
+                <span className="text-[10px] text-[#B89A5A] font-semibold">
+                  {language === 'am' ? '>50% ድምጽ ያስፈልጋል' : '>50% majority required'}
+                </span>
+              </div>
+
+              {proposals.filter((p) => p.status === 'active').map((prop) => {
+                const userVote = prop.votes.find((v) => v.memberId === currentUser.id);
+                const favorCount = prop.votes.filter((v) => v.vote === 'favor').length;
+                const againstCount = prop.votes.filter((v) => v.vote === 'against').length;
+                const majorityTarget = Math.floor(allMembers.length / 2) + 1; // 6 for 11 members
+
+                const handleCastVote = (vote: 'favor' | 'against') => {
+                  const res = mahberService.voteOnProposal(prop.id, currentUser.id, vote, allMembers.length);
+                  if (res.error) {
+                    setRsvpToast(res.error);
+                  } else {
+                    setProposals(mahberService.getSpendingProposals());
+                    setRsvpToast(
+                      language === 'am' ? 'ድምጽዎ በተሳካ ሁኔታ ተመዝግቧል!' : 'Your vote was recorded!'
+                    );
+                  }
+                  setTimeout(() => setRsvpToast(null), 3000);
+                };
+
+                return (
+                  <div key={prop.id} className="p-3 rounded-2xl bg-[#29251F]/80 border border-[#B89A5A]/20 space-y-2">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h4 className="text-xs font-bold text-[#F5EFE3]">
+                          {language === 'am' ? prop.titleAm : prop.title}
+                        </h4>
+                        <p className="text-[11px] text-gray-300 mt-0.5">{prop.description}</p>
+                      </div>
+                      <span className="text-xs font-extrabold text-[#B89A5A] px-2 py-0.5 rounded-lg bg-[#B89A5A]/15">
+                        {prop.amount} {t.currencyEtb}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[10px] text-gray-400 pt-1">
+                      <span>{language === 'am' ? `የደገፉ: ${favorCount}/${majorityTarget}` : `In Favor: ${favorCount}/${majorityTarget}`}</span>
+                      <span>{language === 'am' ? `የተቃወሙ: ${againstCount}` : `Against: ${againstCount}`}</span>
+                    </div>
+
+                    {/* Progress bar towards majority */}
+                    <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#315C48] transition-all"
+                        style={{ width: `${Math.min(100, (favorCount / majorityTarget) * 100)}%` }}
+                      />
+                    </div>
+
+                    {/* Voting buttons */}
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={() => handleCastVote('favor')}
+                        disabled={!!userVote}
+                        className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 transition ${
+                          userVote?.vote === 'favor'
+                            ? 'bg-[#315C48] text-white ring-1 ring-white/20'
+                            : userVote
+                            ? 'opacity-40 bg-white/5 text-gray-400'
+                            : 'bg-[#315C48]/30 hover:bg-[#315C48]/50 text-[#68B78D] border border-[#315C48]/50'
+                        }`}
+                      >
+                        <ThumbsUp size={12} />
+                        <span>{language === 'am' ? 'እደግፋለሁ' : 'In Favor'}</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleCastVote('against')}
+                        disabled={!!userVote}
+                        className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 transition ${
+                          userVote?.vote === 'against'
+                            ? 'bg-[#6F2630] text-white ring-1 ring-white/20'
+                            : userVote
+                            ? 'opacity-40 bg-white/5 text-gray-400'
+                            : 'bg-[#6F2630]/30 hover:bg-[#6F2630]/50 text-[#E598A4] border border-[#6F2630]/50'
+                        }`}
+                      >
+                        <ThumbsDown size={12} />
+                        <span>{language === 'am' ? 'እቃወማለሁ' : 'Against'}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </>
       )}
 

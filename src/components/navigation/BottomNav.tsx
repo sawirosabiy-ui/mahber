@@ -43,11 +43,11 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     },
     { key: 'mezmur', label: t.navMezmur, icon: <Music size={19} /> },
     { key: 'more', label: t.navMore, icon: <MoreHorizontal size={19} /> },
-    // Strictly show Admin ONLY if current user is one of the two admins!
-    { key: 'admin', label: t.navAdmin, icon: <ShieldCheck size={19} />, adminOnly: true },
+    // Admin tab accessible for admins and any member with password mahber@27
+    { key: 'admin', label: t.navAdmin, icon: <ShieldCheck size={19} /> },
   ];
 
-  const visibleTabs = tabs.filter((tab) => !tab.adminOnly || isAdmin);
+  const visibleTabs = tabs;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#151311]/95 dark:bg-[#151311]/95 light:bg-[#FFFDF8]/95 backdrop-blur-lg border-t border-[#B89A5A]/20 pb-safe">
