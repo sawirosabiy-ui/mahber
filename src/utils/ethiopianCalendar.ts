@@ -37,45 +37,111 @@ const GREGORIAN_MONTHS_EN = [
 ];
 
 /**
- * Converts a Gregorian Date to Ethiopian Calendar representation
+/**
+ * Computes Julian Day Number from an Ethiopian Calendar date.
+ * Epoch: Meskerem 1, 1 EC = JDN 1723856.
+ * Each 4-year cycle has 1461 days: 365, 365, 366 (leap), 365 days.
+ * An Ethiopian year is a leap year (with 6 days in Pagumen) when (year % 4 === 3).
  */
-export function gregorianToEthiopian(date: Date): EthiopianDate {
-  const year = date.getFullYear();
-  const month = date.getMonth() + 1;
-  const day = date.getDate();
+export function ethiopianToJdn(year: number, month: number, day: number): number {
+  return (
+    1723856 +
+    365 * (year - 1) +
+    Math.floor(year / 4) +
+    30 * (month - 1) +
+    day -
+    1
+  );
+}
 
-  // Era difference for Gregorian/Ethiopian calendars
-  // Standard conversion based on JDN (Julian Day Number)
+/**
+ * Converts a Julian Day Number to Ethiopian Calendar representation.
+ */
+export function jdnToEthiopian(jdn: number): { year: number; month: number; day: number } {
+  const daysSinceEpoch = jdn - 1723856;
+  const cycle4 = Math.floor(daysSinceEpoch / 1461);
+  const dayInCycle = ((daysSinceEpoch % 1461) + 1461) % 1461;
+
+  let yearInCycle = 1;
+  let dayInYear = dayInCycle;
+
+  if (dayInCycle < 365) {
+    yearInCycle = 1;
+    dayInYear = dayInCycle;
+  } else if (dayInCycle < 730) {
+    yearInCycle = 2;
+    dayInYear = dayInCycle - 365;
+  } else if (dayInCycle < 1096) {
+    // 3rd year in 4-year cycle is leap year (366 days, Pagumen 6)
+    yearInCycle = 3;
+    dayInYear = dayInCycle - 730;
+  } else {
+    yearInCycle = 4;
+    dayInYear = dayInCycle - 1096;
+  }
+
+  const year = cycle4 * 4 + yearInCycle;
+  const month = Math.floor(dayInYear / 30) + 1;
+  const day = (dayInYear % 30) + 1;
+  return { year, month, day };
+}
+
+/**
+ * Computes Julian Day Number from a Gregorian date.
+ */
+export function gregorianToJdn(year: number, month: number, day: number): number {
   const a = Math.floor((14 - month) / 12);
   const y = year + 4800 - a;
   const m = month + 12 * a - 3;
-  const jdn =
+  return (
     day +
     Math.floor((153 * m + 2) / 5) +
     365 * y +
     Math.floor(y / 4) -
     Math.floor(y / 100) +
     Math.floor(y / 400) -
-    32045;
+    32045
+  );
+}
 
-  // Ethiopian epoch in Julian Day Number: 1723856
-  const r = (jdn - 1723856) % 1461;
-  const n = (r % 365) + 365 * Math.floor(r / 1460);
+/**
+ * Converts a Julian Day Number to Gregorian date components.
+ */
+export function jdnToGregorian(jdn: number): { year: number; month: number; day: number } {
+  const l = jdn + 68569;
+  const n = Math.floor((4 * l) / 146097);
+  const l2 = l - Math.floor((146097 * n + 3) / 4);
+  const i = Math.floor((4000 * (l2 + 1)) / 1461001);
+  const l3 = l2 - Math.floor((1461 * i) / 4) + 31;
+  const j = Math.floor((80 * l3) / 2447);
+  const day = l3 - Math.floor((2447 * j) / 80);
+  const l4 = Math.floor(j / 11);
+  const month = j + 2 - 12 * l4;
+  const year = 100 * (n - 49) + i + l4;
+  return { year, month, day };
+}
 
-  const ethYear =
-    4 * Math.floor((jdn - 1723856) / 1461) +
-    Math.floor(r / 365) -
-    Math.floor(r / 1460);
-  const ethMonth = Math.floor(n / 30) + 1;
-  const ethDay = (n % 30) + 1;
+/**
+ * Checks if an Ethiopian year is a leap year (Pagumen has 6 days).
+ */
+export function isEthiopianLeapYear(ethYear: number): boolean {
+  return ((ethYear % 4) + 4) % 4 === 3;
+}
 
-  const validMonth = Math.min(Math.max(ethMonth, 1), 13);
+/**
+ * Converts a Gregorian Date to Ethiopian Calendar representation
+ */
+export function gregorianToEthiopian(date: Date): EthiopianDate {
+  const jdn = gregorianToJdn(date.getFullYear(), date.getMonth() + 1, date.getDate());
+  const eth = jdnToEthiopian(jdn);
+
+  const validMonth = Math.min(Math.max(eth.month, 1), 13);
   const monthInfo = ETHIOPIAN_MONTHS[validMonth - 1] || ETHIOPIAN_MONTHS[0];
 
   return {
-    year: ethYear,
+    year: eth.year,
     month: validMonth,
-    day: ethDay,
+    day: eth.day,
     monthNameAm: monthInfo.am,
     monthNameEn: monthInfo.en,
   };
@@ -85,27 +151,9 @@ export function gregorianToEthiopian(date: Date): EthiopianDate {
  * Converts an Ethiopian Date (year, month 1-13, day 1-30) to a JavaScript Date (Gregorian)
  */
 export function ethiopianToGregorian(ethYear: number, ethMonth: number, ethDay: number): Date {
-  const jdn =
-    1723856 +
-    365 * (ethYear - 1) +
-    Math.floor(ethYear / 4) +
-    30 * (ethMonth - 1) +
-    ethDay -
-    1;
-
-  // Convert Julian Day Number to Gregorian Date
-  const l = jdn + 68569;
-  const n = Math.floor((4 * l) / 146097);
-  const l2 = l - Math.floor((146097 * n + 3) / 4);
-  const i = Math.floor((4000 * (l2 + 1)) / 1461001);
-  const l3 = l2 - Math.floor((1461 * i) / 4) + 31;
-  const j = Math.floor((80 * l3) / 2447);
-  const gregDay = l3 - Math.floor((2447 * j) / 80);
-  const l4 = Math.floor(j / 11);
-  const gregMonth = j + 2 - 12 * l4;
-  const gregYear = 100 * (n - 49) + i + l4;
-
-  return new Date(gregYear, gregMonth - 1, gregDay);
+  const jdn = ethiopianToJdn(ethYear, ethMonth, ethDay);
+  const greg = jdnToGregorian(jdn);
+  return new Date(greg.year, greg.month - 1, greg.day);
 }
 
 /**
@@ -259,5 +307,53 @@ export function getNextMahberProjectedDate(configuredMahberDay: number = 27): {
     ethDateAm,
     ethDateEn,
     gregDateStr,
+  };
+}
+
+/**
+ * Calculates authoritative UTC and local timestamps for an Ethiopian Mahber gathering.
+ * Timezone: East Africa Time (EAT = UTC+3). Default start time: 15:00 (3:00 PM).
+ */
+export function getGatheringTimestamps(
+  ethYear: number,
+  ethMonth: number,
+  ethDay: number = 27,
+  localTimeStr: string = '15:00'
+): {
+  gregorianDate: Date;
+  utcGatheringTimestamp: string;
+  reminder72hTimestamp: string;
+  reminder24hTimestamp: string;
+  ethDateAm: string;
+  ethDateEn: string;
+} {
+  const gregDate = ethiopianToGregorian(ethYear, ethMonth, ethDay);
+  
+  // Parse local hours and minutes (EAT = UTC+3)
+  let hours = 15;
+  let minutes = 0;
+  if (localTimeStr) {
+    const parts = localTimeStr.split(':');
+    if (parts.length >= 2) {
+      hours = parseInt(parts[0], 10) || 15;
+      minutes = parseInt(parts[1], 10) || 0;
+    }
+  }
+
+  // Set UTC equivalent: local EAT (UTC+3) -> UTC = localHour - 3
+  const utcDate = new Date(Date.UTC(gregDate.getFullYear(), gregDate.getMonth(), gregDate.getDate(), hours - 3, minutes, 0, 0));
+  
+  const reminder72h = new Date(utcDate.getTime() - 72 * 60 * 60 * 1000);
+  const reminder24h = new Date(utcDate.getTime() - 24 * 60 * 60 * 1000);
+
+  const monthInfo = ETHIOPIAN_MONTHS[ethMonth - 1] || ETHIOPIAN_MONTHS[0];
+
+  return {
+    gregorianDate: gregDate,
+    utcGatheringTimestamp: utcDate.toISOString(),
+    reminder72hTimestamp: reminder72h.toISOString(),
+    reminder24hTimestamp: reminder24h.toISOString(),
+    ethDateAm: `${ethDay} ${monthInfo.am} ${ethYear}`,
+    ethDateEn: `${ethDay} ${monthInfo.en} ${ethYear}`,
   };
 }

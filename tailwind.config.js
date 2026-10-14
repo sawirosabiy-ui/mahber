@@ -50,7 +50,7 @@ export default {
         }
       },
       fontFamily: {
-        ethiopic: ['"Noto Sans Ethiopic"', 'sans-serif'],
+        ethiopic: ['"Noto Sans Ethiopic"', '"Abyssinica SIL"', 'Nyala', '"Visual Geez Unicode"', 'sans-serif'],
         serif: ['"Cinzel"', 'Georgia', 'serif'],
       },
       boxShadow: {

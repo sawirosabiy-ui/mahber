@@ -341,7 +341,7 @@ const translations: Record<Language, Translations> = {
     programDiscussion: 'Teaching & Reflection',
     programClosingPrayer: 'Closing Prayer & Blessing',
     btnViewDetails: 'View Details',
-    gatheringAddress: 'Brother Dawit Residence, Bole',
+    gatheringAddress: 'Brother Natnael Residence, Bole',
 
     myContribution: 'My Contribution',
     thisMonth: 'This Month',

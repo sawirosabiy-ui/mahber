@@ -22,8 +22,13 @@ export interface Member {
   status?: MemberStatus;
   isDeactivated?: boolean;
   livesAbroad?: boolean;
+  participationStatus?: 'in_person' | 'remote';
+  remoteSince?: string;
+  departedAt?: string;
+  offboardingReason?: string;
   phoneVisibilityConsent?: boolean;
   spiritualRole?: string;
+  functionalRole?: 'mezmur_leader' | 'bible_teacher';
 }
 
 export type AttendanceStatus = 'coming' | 'cant_come' | 'no_response';
@@ -513,5 +518,162 @@ export interface MemberInvitation {
   expiresAt: string;
   isUsed: boolean;
   usedAt?: string;
+}
+
+export type FinancialAccountId = 'core_treasury' | 'gathering_logistics_escrow';
+
+export interface FinancialAccount {
+  id: FinancialAccountId;
+  name: string;
+  nameAm: string;
+  accountType: 'treasury' | 'escrow';
+  balance: number;
+  updatedAt?: string;
+}
+
+export type FinancialLedgerEntryType =
+  | 'debit'
+  | 'credit'
+  | 'reversal'
+  | 'transfer'
+  | 'adjustment_write_off';
+
+export interface FinancialLedgerEntry {
+  id: string;
+  accountId: FinancialAccountId;
+  entryType: FinancialLedgerEntryType;
+  category: string;
+  memberId?: string;
+  amount: number;
+  gatheringId?: string;
+  relatedAttendanceId?: string;
+  relatedPenaltyId?: string;
+  reversesEntryId?: string;
+  idempotencyKey?: string;
+  description: string;
+  descriptionAm: string;
+  recordedBy: string;
+  createdAt: string;
+}
+
+export interface SplitPaymentAllocation {
+  accountId: FinancialAccountId;
+  category: string;
+  amount: number;
+  description: string;
+  descriptionAm: string;
+}
+
+export interface SacredObjectRecord {
+  id: string;
+  name: string;
+  nameAm: string;
+  description?: string;
+}
+
+export interface SacredObjectCustodyRecord {
+  id: string;
+  objectId: string;
+  holderId: string;
+  isCurrentActiveHolder: boolean;
+  confirmedAt?: string;
+  confirmedBy: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface GatheringHostRecord {
+  id: string;
+  gatheringId: string;
+  assignedHostId: string;
+  actualHostId: string;
+  isSwapped: boolean;
+  swapReason?: string;
+  swapReasonAm?: string;
+  approvedBy?: string;
+  createdAt: string;
+}
+
+export interface ProposalGovernanceRecord {
+  proposalId: string;
+  eligibleMemberIds: string[];
+  quorumThreshold: number;
+  deadlineAt: string;
+  isClosed: boolean;
+  finalOutcome: 'pending' | 'approved' | 'rejected' | 'tied' | 'no_quorum';
+  totalVotesCast: number;
+  inFavorCount: number;
+  againstCount: number;
+  abstainCount: number;
+  closedAt?: string;
+  closedBy?: string;
+}
+
+export interface ReminderQueueEntry {
+  id: string;
+  gatheringId: string;
+  triggerType: '72_hours' | '24_hours' | 'custom';
+  scheduledFor: string;
+  channel: 'in_app' | 'telegram';
+  recipientId?: string;
+  status: 'pending' | 'delivered' | 'failed' | 'cancelled';
+  attempts: number;
+  lastAttemptAt?: string;
+  errorMessage?: string;
+  dedupKey: string;
+  createdAt: string;
+}
+
+export interface TelegramDispatchLog {
+  id: string;
+  gatheringId?: string;
+  announcementId?: string;
+  messageType: 'gathering_reminder' | 'official_announcement' | 'proposal_approved';
+  recipientChatId: string;
+  deliveredAt: string;
+  dedupKey: string;
+  status: 'sent' | 'failed';
+}
+
+export interface MezmurAudioFileRecord {
+  id: string;
+  mezmurId: string;
+  fileName: string;
+  storageProvider: 'supabase' | 'cloudflare_r2';
+  storagePath: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  durationSeconds?: number;
+  estimatedBitrateKbps?: number;
+  uploadedBy: string;
+  totalDownloadsCount: number;
+  totalEgressBytes: number;
+  createdAt: string;
+}
+
+export interface MemberOffboardingRecord {
+  id: string;
+  memberId: string;
+  offboardedBy: string;
+  reason: string;
+  reasonAm?: string;
+  outstandingDebtAmount: number;
+  debtDisposition: 'collectible' | 'written_off';
+  writeOffLedgerEntryId?: string;
+  advanceBalanceAmount: number;
+  advanceDisposition: 'refunded' | 'transferred_to_treasury' | 'none';
+  advanceLedgerEntryId?: string;
+  custodyReassignedTo?: string;
+  offboardedAt: string;
+}
+
+export interface OfflineSyncIntent {
+  id: string;
+  actionType: string;
+  payload: Record<string, unknown>;
+  timestamp: string;
+  idempotencyKey: string;
+  status: 'pending' | 'synced' | 'rejected' | 'conflict';
+  error?: string;
 }
 

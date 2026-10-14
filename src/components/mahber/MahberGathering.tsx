@@ -45,27 +45,9 @@ export const MahberGathering: React.FC<MahberGatheringProps> = ({
   const { isAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState<'calendar' | 'program' | 'roster' | 'history'>('program');
 
-  if (!gathering) {
-    return (
-      <div className="py-6">
-        <EmptyView
-          title={language === 'am' ? 'ቀጣይ ማኅበር የለም።' : 'No upcoming Mahber.'}
-          subtitle={
-            language === 'am'
-              ? 'አስተዳዳሪው የሚቀጥለውን የማኅበር መሰብሰቢያ ቀን እስኪያዘጋጅ ይጠብቁ።'
-              : 'Please wait until an administrator schedules the next gathering.'
-          }
-        />
-      </div>
-    );
-  }
-
-  const activeMembers = allMembers.filter((m) => !m.isDeactivated);
-  const totalCount = activeMembers.length;
-
   // Live Gathering Attendance State (auto-updates when admin saves)
   const [actualAttendanceMap, setActualAttendanceMap] = useState<Record<string, GatheringAttendanceEntry>>(() =>
-    mahberService.getActualAttendance(gathering.id)
+    gathering ? mahberService.getActualAttendance(gathering.id) : {}
   );
 
   useEffect(() => {
@@ -100,6 +82,24 @@ export const MahberGathering: React.FC<MahberGatheringProps> = ({
       bc?.close();
     };
   }, [gathering?.id]);
+
+  if (!gathering) {
+    return (
+      <div className="py-6">
+        <EmptyView
+          title={language === 'am' ? 'ቀጣይ ማኅበር የለም።' : 'No upcoming Mahber.'}
+          subtitle={
+            language === 'am'
+              ? 'አስተዳዳሪው የሚቀጥለውን የማኅበር መሰብሰቢያ ቀን እስኪያዘጋጅ ይጠብቁ።'
+              : 'Please wait until an administrator schedules the next gathering.'
+          }
+        />
+      </div>
+    );
+  }
+
+  const activeMembers = allMembers.filter((m) => !m.isDeactivated);
+  const totalCount = activeMembers.length;
 
   const hasActualAttendance = Object.keys(actualAttendanceMap).length > 0;
   const actualPresentCount = Object.values(actualAttendanceMap).filter((e) => e.status === 'PRESENT').length;

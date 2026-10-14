@@ -37,6 +37,20 @@ import {
   ProposalVote,
   MemberInvitation,
   Member,
+  FinancialAccount,
+  FinancialAccountId,
+  FinancialLedgerEntry,
+  FinancialLedgerEntryType,
+  SplitPaymentAllocation,
+  SacredObjectRecord,
+  SacredObjectCustodyRecord,
+  GatheringHostRecord,
+  ProposalGovernanceRecord,
+  ReminderQueueEntry,
+  TelegramDispatchLog,
+  MezmurAudioFileRecord,
+  MemberOffboardingRecord,
+  OfflineSyncIntent,
 } from '../types';
 
 export const ADMIN_MASTER_PASSWORD = 'mahber@27';
@@ -61,7 +75,11 @@ import {
   INITIAL_SHARED_FUND_TRANSACTIONS,
   INITIAL_SPENDING_PROPOSALS,
 } from '../data/mockData';
-import { getNextMahberProjectedDate } from '../utils/ethiopianCalendar';
+import {
+  getNextMahberProjectedDate,
+  getGatheringTimestamps,
+  isEthiopianLeapYear,
+} from '../utils/ethiopianCalendar';
 
 // Configurable activity window for "Active" study (in days)
 export const STUDY_ACTIVITY_WINDOW_DAYS = 7;
@@ -92,6 +110,19 @@ const KEY_TRANSPORT = 'mahber_transport_v1';
 const KEY_SHARED_FUND = 'mahber_shared_fund_v1';
 const KEY_PROPOSALS = 'mahber_proposals_v1';
 const KEY_INVITATIONS = 'mahber_invitations_v1';
+const KEY_MEMBERS = 'mahber_members_v2';
+const KEY_FINANCIAL_ACCOUNTS = 'mahber_financial_accounts_v1';
+const KEY_FINANCIAL_LEDGER = 'mahber_financial_ledger_entries_v1';
+const KEY_SACRED_OBJECTS = 'mahber_sacred_objects_v1';
+const KEY_CUSTODY_HISTORY = 'mahber_sacred_custody_v1';
+const KEY_GATHERING_HOSTS = 'mahber_gathering_hosts_v1';
+const KEY_PROPOSAL_GOVERNANCE = 'mahber_proposal_governance_v1';
+const KEY_REMINDER_QUEUE = 'mahber_reminder_queue_v1';
+const KEY_TELEGRAM_LOG = 'mahber_telegram_log_v1';
+const KEY_OFFBOARDING_RECORDS = 'mahber_offboarding_v1';
+const KEY_AUDIO_METADATA = 'mahber_audio_files_v1';
+const KEY_OFFLINE_INTENTS = 'mahber_offline_intents_v1';
+const KEY_PARTICIPATION_AUDIT = 'mahber_participation_audit_v1';
 
 const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
   {
@@ -2273,6 +2304,843 @@ class MahberService {
     }
     return { valid: true };
   }
+
+  // =========================================================================
+  // --- 1. REMOTE PARTICIPATION & STATUS AUDIT ---
+  // =========================================================================
+  updateMemberParticipationStatus(
+    memberId: string,
+    newStatus: 'in_person' | 'remote',
+    changedBy: string,
+    reason: string
+  ): { success: boolean; member?: Member; error?: string } {
+    const allMembers = this.getAllMembers();
+    const target = allMembers.find((m) => m.id === memberId);
+    if (!target) return { success: false, error: 'Member not found' };
+
+    const oldStatus = target.participationStatus || (target.livesAbroad ? 'remote' : 'in_person');
+    const updatedMember: Member = {
+      ...target,
+      participationStatus: newStatus,
+      livesAbroad: newStatus === 'remote',
+      remoteSince: newStatus === 'remote' ? new Date().toISOString() : undefined,
+    };
+
+    const updatedList = allMembers.map((m) => (m.id === memberId ? updatedMember : m));
+    localStorage.setItem('mahber_members', JSON.stringify(updatedList));
+
+    const auditLogs = JSON.parse(localStorage.getItem(KEY_PARTICIPATION_AUDIT) || '[]');
+    auditLogs.unshift({
+      id: `part-audit-${Date.now()}-${memberId}`,
+      memberId,
+      previousStatus: oldStatus,
+      newStatus,
+      changedBy,
+      reason,
+      createdAt: new Date().toISOString(),
+    });
+    localStorage.setItem(KEY_PARTICIPATION_AUDIT, JSON.stringify(auditLogs));
+
+    return { success: true, member: updatedMember };
+  }
+
+  // =========================================================================
+  // --- 2. DUAL FINANCIAL ACCOUNTS & IMMUTABLE LEDGER ---
+  // =========================================================================
+  getFinancialAccounts(): FinancialAccount[] {
+    const saved = localStorage.getItem(KEY_FINANCIAL_ACCOUNTS);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length >= 2) return parsed;
+      } catch {}
+    }
+    const initial: FinancialAccount[] = [
+      { id: 'core_treasury', name: 'Core Treasury', nameAm: 'ዋና ካዝና (የማኅበር ቋሚ ፈንድ)', accountType: 'treasury', balance: 3800 },
+      { id: 'gathering_logistics_escrow', name: 'Gathering Logistics Escrow', nameAm: 'የማኅበር ጉዞ እና ዝግጅት መያዣ', accountType: 'escrow', balance: 0 },
+    ];
+    localStorage.setItem(KEY_FINANCIAL_ACCOUNTS, JSON.stringify(initial));
+    return initial;
+  }
+
+  getFinancialLedger(filterAccountId?: FinancialAccountId, filterMemberId?: string): FinancialLedgerEntry[] {
+    const saved = localStorage.getItem(KEY_FINANCIAL_LEDGER);
+    if (!saved) return [];
+    try {
+      let entries: FinancialLedgerEntry[] = JSON.parse(saved);
+      if (filterAccountId) entries = entries.filter((e) => e.accountId === filterAccountId);
+      if (filterMemberId) entries = entries.filter((e) => e.memberId === filterMemberId);
+      return entries;
+    } catch {
+      return [];
+    }
+  }
+
+  recordSplitPayment(
+    memberId: string,
+    totalAmount: number,
+    allocations: SplitPaymentAllocation[],
+    recordedBy: string = 'Natnael Endale',
+    idempotencyKey?: string
+  ): { success: boolean; entries: FinancialLedgerEntry[]; error?: string } {
+    const sumAllocated = allocations.reduce((s, a) => s + a.amount, 0);
+    if (Math.abs(sumAllocated - totalAmount) > 0.01) {
+      return { success: false, entries: [], error: 'Allocations sum does not match total amount received' };
+    }
+
+    const ledger = this.getFinancialLedger();
+    const key = idempotencyKey || `split-pay-${Date.now()}-${memberId}`;
+    if (ledger.some((e) => e.idempotencyKey?.startsWith(key))) {
+      return { success: true, entries: ledger.filter((e) => e.idempotencyKey?.startsWith(key)) };
+    }
+
+    const accounts = this.getFinancialAccounts();
+    const newEntries: FinancialLedgerEntry[] = [];
+
+    allocations.forEach((alloc, idx) => {
+      const entry: FinancialLedgerEntry = {
+        id: `fledg-${Date.now()}-${idx}-${memberId}`,
+        accountId: alloc.accountId,
+        entryType: 'credit',
+        category: alloc.category,
+        memberId,
+        amount: alloc.amount,
+        idempotencyKey: `${key}-${idx}`,
+        description: alloc.description,
+        descriptionAm: alloc.descriptionAm,
+        recordedBy,
+        createdAt: new Date().toISOString(),
+      };
+      newEntries.push(entry);
+
+      const acc = accounts.find((a) => a.id === alloc.accountId);
+      if (acc) acc.balance += alloc.amount;
+    });
+
+    localStorage.setItem(KEY_FINANCIAL_LEDGER, JSON.stringify([...newEntries, ...ledger]));
+    localStorage.setItem(KEY_FINANCIAL_ACCOUNTS, JSON.stringify(accounts));
+
+    return { success: true, entries: newEntries };
+  }
+
+  reconcileLogisticsEscrow(
+    gatheringId: string,
+    actualCost: number,
+    unusedAction: 'return' | 'carry_forward' | 'reclassify',
+    recordedBy: string = 'Natnael Endale'
+  ): { success: boolean; remainingBalance: number; actionTaken: string; ledgerEntry?: FinancialLedgerEntry } {
+    const accounts = this.getFinancialAccounts();
+    const escrow = accounts.find((a) => a.id === 'gathering_logistics_escrow');
+    const treasury = accounts.find((a) => a.id === 'core_treasury');
+    if (!escrow) return { success: false, remainingBalance: 0, actionTaken: 'error' };
+
+    const remaining = escrow.balance - actualCost;
+    escrow.balance = actualCost;
+
+    let actionEntry: FinancialLedgerEntry | undefined;
+    const ledger = this.getFinancialLedger();
+
+    if (remaining > 0) {
+      if (unusedAction === 'reclassify') {
+        escrow.balance -= remaining;
+        if (treasury) treasury.balance += remaining;
+        actionEntry = {
+          id: `fledg-trans-${Date.now()}`,
+          accountId: 'core_treasury',
+          entryType: 'transfer',
+          category: 'unused_transport_reclassified',
+          amount: remaining,
+          gatheringId,
+          description: `Unused logistics balance from gathering ${gatheringId} transferred to Core Treasury`,
+          descriptionAm: `ከተሰብሳቢው ማኅበር ትራንስፖርት የተረፈ ገቢ ወደ ዋና ካዝና ተዛውሯል`,
+          recordedBy,
+          createdAt: new Date().toISOString(),
+        };
+        localStorage.setItem(KEY_FINANCIAL_LEDGER, JSON.stringify([actionEntry, ...ledger]));
+      } else if (unusedAction === 'return') {
+        escrow.balance -= remaining;
+        actionEntry = {
+          id: `fledg-ret-${Date.now()}`,
+          accountId: 'gathering_logistics_escrow',
+          entryType: 'debit',
+          category: 'transport_refund',
+          amount: remaining,
+          gatheringId,
+          description: `Unused logistics refunded to contributing members`,
+          descriptionAm: `ከተሰብሳቢው ማኅበር ትራንስፖርት የተረፈ ለአባላት ተመላሽ ተደርጓል`,
+          recordedBy,
+          createdAt: new Date().toISOString(),
+        };
+        localStorage.setItem(KEY_FINANCIAL_LEDGER, JSON.stringify([actionEntry, ...ledger]));
+      }
+    }
+
+    localStorage.setItem(KEY_FINANCIAL_ACCOUNTS, JSON.stringify(accounts));
+    return { success: true, remainingBalance: Math.max(0, remaining), actionTaken: unusedAction, ledgerEntry: actionEntry };
+  }
+
+  transferBetweenAccounts(
+    fromAccount: FinancialAccountId,
+    toAccount: FinancialAccountId,
+    amount: number,
+    authorizedBy: string = 'Sawiros Abiy',
+    reason: string = 'Authorized inter-account transfer'
+  ): { success: boolean; error?: string } {
+    if (amount <= 0) return { success: false, error: 'Transfer amount must be positive' };
+    const accounts = this.getFinancialAccounts();
+    const from = accounts.find((a) => a.id === fromAccount);
+    const to = accounts.find((a) => a.id === toAccount);
+    if (!from || !to) return { success: false, error: 'Invalid account ID' };
+    if (from.balance < amount) return { success: false, error: 'Insufficient account balance' };
+
+    from.balance -= amount;
+    to.balance += amount;
+    localStorage.setItem(KEY_FINANCIAL_ACCOUNTS, JSON.stringify(accounts));
+
+    const ledger = this.getFinancialLedger();
+    const entry: FinancialLedgerEntry = {
+      id: `fledg-xfer-${Date.now()}`,
+      accountId: toAccount,
+      entryType: 'transfer',
+      category: 'account_transfer',
+      amount,
+      description: `Transfer from ${fromAccount} to ${toAccount}: ${reason}`,
+      descriptionAm: `ከ${fromAccount} ወደ ${toAccount} የተደረገ ዝውውር`,
+      recordedBy: authorizedBy,
+      createdAt: new Date().toISOString(),
+    };
+    localStorage.setItem(KEY_FINANCIAL_LEDGER, JSON.stringify([entry, ...ledger]));
+    return { success: true };
+  }
+
+  getTreasurySummary(): {
+    coreTreasuryBalance: number;
+    logisticsEscrowBalance: number;
+    totalPenaltiesCollected: number;
+    activeProposalsCount: number;
+  } {
+    const accounts = this.getFinancialAccounts();
+    const core = accounts.find((a) => a.id === 'core_treasury')?.balance || 0;
+    const escrow = accounts.find((a) => a.id === 'gathering_logistics_escrow')?.balance || 0;
+    const penalties = this.getPenalties().filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0);
+    const proposals = this.getSpendingProposals().filter((p) => p.status === 'active').length;
+
+    return {
+      coreTreasuryBalance: core,
+      logisticsEscrowBalance: escrow,
+      totalPenaltiesCollected: penalties,
+      activeProposalsCount: proposals,
+    };
+  }
+
+  // =========================================================================
+  // --- 3. ATTENDANCE TIMING & IDEMPOTENT SERVER FINALIZATION ---
+  // =========================================================================
+  validateAttendanceTiming(
+    arrivalTimeStr: string,
+    scheduledStartStr: string = '15:00',
+    gracePeriodMinutes: number = 30
+  ): { isLate: boolean; minutesLate: number; penaltyAmount: number; status: ActualAttendanceStatus } {
+    let arrivalMinutes = 0;
+    let scheduledMinutes = 15 * 60; // 15:00
+
+    if (scheduledStartStr.includes(':')) {
+      const [sh, sm] = scheduledStartStr.split(':').map((v) => parseInt(v, 10) || 0);
+      scheduledMinutes = sh * 60 + sm;
+    }
+
+    if (arrivalTimeStr.includes('T')) {
+      const d = new Date(arrivalTimeStr);
+      arrivalMinutes = d.getHours() * 60 + d.getMinutes();
+    } else if (arrivalTimeStr.includes(':')) {
+      const [ah, am] = arrivalTimeStr.split(':').map((v) => parseInt(v, 10) || 0);
+      arrivalMinutes = ah * 60 + am;
+    }
+
+    const minutesLate = Math.max(0, arrivalMinutes - scheduledMinutes);
+    if (minutesLate <= gracePeriodMinutes) {
+      return { isLate: false, minutesLate, penaltyAmount: 0, status: 'PRESENT' };
+    }
+    return { isLate: true, minutesLate, penaltyAmount: 100, status: 'LATE' };
+  }
+
+  finalizeGatheringAttendance(
+    gatheringId: string,
+    attendanceMap: Record<string, { status: ActualAttendanceStatus; arrivalTime?: string; note?: string }>,
+    finalizedBy: string = 'Natnael Endale'
+  ): { success: boolean; penaltiesAssessed: PenaltyRecord[]; ledgerEntries: FinancialLedgerEntry[]; isDuplicate: boolean } {
+    const existingPenalties = this.getPenalties();
+    const gatheringPenalties = existingPenalties.filter((p) => p.gatheringId === gatheringId);
+    if (gatheringPenalties.length > 0) {
+      return { success: true, penaltiesAssessed: gatheringPenalties, ledgerEntries: [], isDuplicate: true };
+    }
+
+    const allMembers = this.getAllMembers();
+    const newPenalties: PenaltyRecord[] = [];
+    const newLedgerEntries: FinancialLedgerEntry[] = [];
+    const ledger = this.getFinancialLedger();
+
+    allMembers.forEach((member) => {
+      const entry = attendanceMap[member.id] || { status: 'PRESENT' };
+      const isRemote = member.participationStatus === 'remote' || member.livesAbroad;
+
+      // Remote member protection: zero in-person attendance penalties!
+      if (isRemote) return;
+
+      if (entry.status === 'LATE') {
+        const penaltyId = `pen-late-${gatheringId}-${member.id}`;
+        const penalty: PenaltyRecord = {
+          id: penaltyId,
+          memberId: member.id,
+          gatheringId,
+          type: 'late',
+          amount: 100,
+          reason: 'Late arrival exceeding 30-minute grace period',
+          reasonAm: 'የ30 ደቂቃ የእፎይታ ጊዜ አልፎ በመዘግየት',
+          status: 'pending',
+          recordedBy: finalizedBy,
+          createdAt: new Date().toISOString(),
+        };
+        newPenalties.push(penalty);
+
+        newLedgerEntries.push({
+          id: `fledg-pen-${penaltyId}`,
+          accountId: 'core_treasury',
+          entryType: 'debit',
+          category: 'late_penalty_assessment',
+          memberId: member.id,
+          amount: 100,
+          gatheringId,
+          idempotencyKey: `idemp-${penaltyId}`,
+          description: `Late arrival penalty assessed: ${member.name}`,
+          descriptionAm: `የማረፈድ ቅጣት ተመዝግቧል፡ ${member.amharicName}`,
+          recordedBy: finalizedBy,
+          createdAt: new Date().toISOString(),
+        });
+      } else if (entry.status === 'ABSENT') {
+        const penaltyId = `pen-abs-${gatheringId}-${member.id}`;
+        const penalty: PenaltyRecord = {
+          id: penaltyId,
+          memberId: member.id,
+          gatheringId,
+          type: 'absence',
+          amount: 200,
+          reason: 'Unexcused absence from monthly gathering',
+          reasonAm: 'ያለፈቃድ ከወርሃዊ ማኅበር መቅረት',
+          status: 'pending',
+          recordedBy: finalizedBy,
+          createdAt: new Date().toISOString(),
+        };
+        newPenalties.push(penalty);
+
+        newLedgerEntries.push({
+          id: `fledg-pen-${penaltyId}`,
+          accountId: 'core_treasury',
+          entryType: 'debit',
+          category: 'absence_penalty_assessment',
+          memberId: member.id,
+          amount: 200,
+          gatheringId,
+          idempotencyKey: `idemp-${penaltyId}`,
+          description: `Unexcused absence penalty assessed: ${member.name}`,
+          descriptionAm: `ያለፈቃድ የመቅረት ቅጣት ተመዝግቧል፡ ${member.amharicName}`,
+          recordedBy: finalizedBy,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    });
+
+    localStorage.setItem(KEY_PENALTIES, JSON.stringify([...newPenalties, ...existingPenalties]));
+    localStorage.setItem(KEY_FINANCIAL_LEDGER, JSON.stringify([...newLedgerEntries, ...ledger]));
+
+    this.saveActualAttendance(gatheringId, attendanceMap, 'mem_2', finalizedBy);
+
+    return { success: true, penaltiesAssessed: newPenalties, ledgerEntries: newLedgerEntries, isDuplicate: false };
+  }
+
+  correctAttendanceStatus(
+    gatheringId: string,
+    memberId: string,
+    newStatus: ActualAttendanceStatus,
+    correctedBy: string = 'Natnael Endale',
+    reason: string = 'Administrative review and correction'
+  ): { success: boolean; reversingLedgerEntry?: FinancialLedgerEntry; error?: string } {
+    const penalties = this.getPenalties();
+    const targetPenalty = penalties.find((p) => p.gatheringId === gatheringId && p.memberId === memberId);
+    const ledger = this.getFinancialLedger();
+    const originalEntry = ledger.find((e) => e.gatheringId === gatheringId && e.memberId === memberId && e.entryType === 'debit');
+
+    let reversingEntry: FinancialLedgerEntry | undefined;
+
+    if (newStatus === 'EXCUSED' && targetPenalty) {
+      targetPenalty.status = 'waived';
+      targetPenalty.waivedBy = correctedBy;
+      targetPenalty.waiverReason = reason;
+
+      reversingEntry = {
+        id: `fledg-rev-${Date.now()}-${memberId}`,
+        accountId: 'core_treasury',
+        entryType: 'reversal',
+        category: 'penalty_reversal_excused',
+        memberId,
+        amount: targetPenalty.amount,
+        gatheringId,
+        reversesEntryId: originalEntry?.id,
+        idempotencyKey: `rev-${targetPenalty.id}`,
+        description: `Compensating reversal for excused absence: ${reason}`,
+        descriptionAm: `በይቅርታ የታለፈ ቅጣት ማካካሻ ተመዝግቧል`,
+        recordedBy: correctedBy,
+        createdAt: new Date().toISOString(),
+      };
+
+      localStorage.setItem(KEY_PENALTIES, JSON.stringify(penalties));
+      localStorage.setItem(KEY_FINANCIAL_LEDGER, JSON.stringify([reversingEntry, ...ledger]));
+    }
+
+    return { success: true, reversingLedgerEntry: reversingEntry };
+  }
+
+  // =========================================================================
+  // --- 4. SACRED CUSTODY VS GATHERING HOSTS SEPARATION ---
+  // =========================================================================
+  getCustodyHistory(objectId: string = 'obj_medhanialem_icon'): SacredObjectCustodyRecord[] {
+    const saved = localStorage.getItem(KEY_CUSTODY_HISTORY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    const initial: SacredObjectCustodyRecord[] = [
+      {
+        id: 'cust-init-1',
+        objectId,
+        holderId: 'm1',
+        isCurrentActiveHolder: true,
+        confirmedAt: '2026-10-01T00:00:00Z',
+        confirmedBy: 'm1',
+        notes: 'Initial canonical custody assignment',
+        createdAt: '2026-10-01T00:00:00Z',
+      },
+    ];
+    localStorage.setItem(KEY_CUSTODY_HISTORY, JSON.stringify(initial));
+    return initial;
+  }
+
+  recordCustodyHandover(
+    objectId: string = 'obj_medhanialem_icon',
+    toMemberId: string,
+    confirmedBy: string,
+    notes?: string
+  ): { success: boolean; newCustodyRecord?: SacredObjectCustodyRecord; error?: string } {
+    const history = this.getCustodyHistory(objectId);
+
+    // Invariant: strictly ONE active custody holder!
+    const updatedHistory = history.map((c) => (c.isCurrentActiveHolder ? { ...c, isCurrentActiveHolder: false } : c));
+
+    const newRecord: SacredObjectCustodyRecord = {
+      id: `cust-${Date.now()}-${toMemberId}`,
+      objectId,
+      holderId: toMemberId,
+      isCurrentActiveHolder: true,
+      confirmedAt: new Date().toISOString(),
+      confirmedBy,
+      notes: notes || 'Formal sacred icon handover confirmed',
+      createdAt: new Date().toISOString(),
+    };
+
+    const finalHistory = [newRecord, ...updatedHistory];
+    localStorage.setItem(KEY_CUSTODY_HISTORY, JSON.stringify(finalHistory));
+
+    return { success: true, newCustodyRecord: newRecord };
+  }
+
+  getGatheringHosts(gatheringId?: string): GatheringHostRecord[] {
+    const saved = localStorage.getItem(KEY_GATHERING_HOSTS);
+    if (!saved) return [];
+    try {
+      const parsed: GatheringHostRecord[] = JSON.parse(saved);
+      if (gatheringId) return parsed.filter((h) => h.gatheringId === gatheringId);
+      return parsed;
+    } catch {
+      return [];
+    }
+  }
+
+  // =========================================================================
+  // --- 5. VOTING GOVERNANCE WITH ELIGIBILITY, QUORUM & TIE HANDLING ---
+  // =========================================================================
+  createGovernedProposal(params: {
+    title: string;
+    titleAm: string;
+    description: string;
+    amount: number;
+    category: string;
+    proposedBy: string;
+    proposedByName: string;
+    quorumThreshold?: number;
+    deadlineDays?: number;
+  }): { proposal: SpendingProposal; governance: ProposalGovernanceRecord } {
+    const proposal = this.createSpendingProposal(params);
+    const allMembers = this.getAllMembers().filter((m) => !m.isDeactivated);
+    const eligibleMemberIds = allMembers.map((m) => m.id);
+
+    const deadlineAt = new Date(Date.now() + (params.deadlineDays || 7) * 24 * 60 * 60 * 1000).toISOString();
+    const governance: ProposalGovernanceRecord = {
+      proposalId: proposal.id,
+      eligibleMemberIds,
+      quorumThreshold: params.quorumThreshold || 6,
+      deadlineAt,
+      isClosed: false,
+      finalOutcome: 'pending',
+      totalVotesCast: 0,
+      inFavorCount: 0,
+      againstCount: 0,
+      abstainCount: 0,
+    };
+
+    const govMap = JSON.parse(localStorage.getItem(KEY_PROPOSAL_GOVERNANCE) || '{}');
+    govMap[proposal.id] = governance;
+    localStorage.setItem(KEY_PROPOSAL_GOVERNANCE, JSON.stringify(govMap));
+
+    return { proposal, governance };
+  }
+
+  castGovernedVote(
+    proposalId: string,
+    memberId: string,
+    vote: 'favor' | 'against' | 'abstain'
+  ): { success: boolean; error?: string } {
+    const govMap = JSON.parse(localStorage.getItem(KEY_PROPOSAL_GOVERNANCE) || '{}');
+    const gov: ProposalGovernanceRecord | undefined = govMap[proposalId];
+    if (gov && gov.isClosed) {
+      return { success: false, error: 'Voting is closed for this proposal' };
+    }
+    if (gov && new Date() > new Date(gov.deadlineAt)) {
+      return { success: false, error: 'Voting deadline has expired' };
+    }
+    if (gov && !gov.eligibleMemberIds.includes(memberId)) {
+      return { success: false, error: 'Member is not eligible to vote on this proposal' };
+    }
+
+    if (vote === 'abstain') {
+      const proposals = this.getSpendingProposals();
+      const p = proposals.find((prop) => prop.id === proposalId);
+      if (!p) return { success: false, error: 'Proposal not found' };
+      if (p.votes.some((v) => v.memberId === memberId)) {
+        return { success: false, error: 'Member has already voted on this proposal' };
+      }
+      p.votes.push({ memberId, vote: 'favor', votedAt: new Date().toISOString() });
+      localStorage.setItem(KEY_PROPOSALS, JSON.stringify(proposals));
+      if (gov) {
+        gov.totalVotesCast += 1;
+        gov.abstainCount += 1;
+        govMap[proposalId] = gov;
+        localStorage.setItem(KEY_PROPOSAL_GOVERNANCE, JSON.stringify(govMap));
+      }
+      return { success: true };
+    }
+
+    const voteRes = this.voteOnProposal(proposalId, memberId, vote);
+    if (voteRes.error) return { success: false, error: voteRes.error };
+
+    if (gov) {
+      gov.totalVotesCast += 1;
+      if (vote === 'favor') gov.inFavorCount += 1;
+      else if (vote === 'against') gov.againstCount += 1;
+      govMap[proposalId] = gov;
+      localStorage.setItem(KEY_PROPOSAL_GOVERNANCE, JSON.stringify(govMap));
+    }
+
+    return { success: true };
+  }
+
+  tallyGovernedProposal(proposalId: string, closedBy: string = 'Sawiros Abiy'): ProposalGovernanceRecord {
+    const govMap = JSON.parse(localStorage.getItem(KEY_PROPOSAL_GOVERNANCE) || '{}');
+    let gov: ProposalGovernanceRecord = govMap[proposalId] || {
+      proposalId,
+      eligibleMemberIds: this.getAllMembers().map((m) => m.id),
+      quorumThreshold: 6,
+      deadlineAt: new Date().toISOString(),
+      isClosed: true,
+      finalOutcome: 'pending',
+      totalVotesCast: 0,
+      inFavorCount: 0,
+      againstCount: 0,
+      abstainCount: 0,
+    };
+
+    const proposals = this.getSpendingProposals();
+    const proposal = proposals.find((p) => p.id === proposalId);
+
+    const inFavor = gov.inFavorCount;
+    const against = gov.againstCount;
+    const abstain = gov.abstainCount;
+    const totalCast = inFavor + against + abstain;
+
+    gov.totalVotesCast = totalCast;
+    gov.isClosed = true;
+    gov.closedAt = new Date().toISOString();
+    gov.closedBy = closedBy;
+
+    if (totalCast < gov.quorumThreshold) {
+      gov.finalOutcome = 'no_quorum';
+    } else {
+      if (inFavor > against) {
+        gov.finalOutcome = 'approved';
+      } else if (against > inFavor) {
+        gov.finalOutcome = 'rejected';
+      } else {
+        // TIE: Samuel Muse has NO automatic casting vote without explicit group authorization!
+        gov.finalOutcome = 'tied';
+      }
+    }
+
+    if (proposal) {
+      proposal.status = gov.finalOutcome === 'approved' ? 'approved' : 'rejected';
+      localStorage.setItem(KEY_PROPOSALS, JSON.stringify(proposals));
+    }
+
+    govMap[proposalId] = gov;
+    localStorage.setItem(KEY_PROPOSAL_GOVERNANCE, JSON.stringify(govMap));
+    return gov;
+  }
+
+  // =========================================================================
+  // --- 6. MEMBER OFFBOARDING & FINANCIAL RECONCILIATION ---
+  // =========================================================================
+  offboardMember(
+    memberId: string,
+    offboardedBy: string = 'Sawiros Abiy',
+    reason: string,
+    debtDisposition: 'collectible' | 'written_off' = 'written_off',
+    advanceDisposition: 'refunded' | 'transferred_to_treasury' = 'transferred_to_treasury'
+  ): MemberOffboardingRecord {
+    const allMembers = this.getAllMembers();
+    const member = allMembers.find((m) => m.id === memberId);
+
+    const penalties = this.getPenalties().filter((p) => p.memberId === memberId && p.status === 'pending');
+    const totalDebt = penalties.reduce((s, p) => s + p.amount, 0);
+
+    let writeOffLedgerId: string | undefined;
+    if (totalDebt > 0 && debtDisposition === 'written_off') {
+      const ledger = this.getFinancialLedger();
+      const entry: FinancialLedgerEntry = {
+        id: `fledg-woff-${Date.now()}-${memberId}`,
+        accountId: 'core_treasury',
+        entryType: 'adjustment_write_off',
+        category: 'uncollectible_debt_adjustment',
+        memberId,
+        amount: totalDebt,
+        description: `Authorized bad debt write-off on member offboarding: ${reason}`,
+        descriptionAm: `ከማኅበር ሲሰናበቱ ይቅር የተባለ ዕዳ ማስተካከያ`,
+        recordedBy: offboardedBy,
+        createdAt: new Date().toISOString(),
+      };
+      writeOffLedgerId = entry.id;
+      localStorage.setItem(KEY_FINANCIAL_LEDGER, JSON.stringify([entry, ...ledger]));
+
+      penalties.forEach((p) => {
+        p.status = 'waived';
+        p.waivedBy = offboardedBy;
+        p.waiverReason = `Offboarding write-off: ${reason}`;
+      });
+      localStorage.setItem(KEY_PENALTIES, JSON.stringify(this.getPenalties()));
+    }
+
+    const custody = this.getCustodyHistory();
+    const activeHolder = custody.find((c) => c.isCurrentActiveHolder && c.holderId === memberId);
+    let reassignee: string | undefined;
+    if (activeHolder) {
+      reassignee = 'm1';
+      this.recordCustodyHandover('obj_medhanialem_icon', reassignee, offboardedBy, 'Custody reassignment upon offboarding');
+    }
+
+    const rotation = this.getPaintingRotation();
+    rotation.rotationOrder = rotation.rotationOrder.filter((id) => id !== memberId);
+    if (rotation.nextAssignedHostId === memberId) {
+      rotation.nextAssignedHostId = rotation.rotationOrder[0] || 'm1';
+    }
+    if (rotation.scheduledHostId === memberId) {
+      rotation.scheduledHostId = rotation.nextAssignedHostId;
+    }
+    localStorage.setItem(KEY_PAINTING_ROTATION, JSON.stringify(rotation));
+
+    if (member) {
+      member.status = 'inactive';
+      member.isDeactivated = true;
+      member.departedAt = new Date().toISOString();
+      member.offboardingReason = reason;
+      localStorage.setItem('mahber_members', JSON.stringify(allMembers));
+    }
+
+    const offboardRecord: MemberOffboardingRecord = {
+      id: `offb-${Date.now()}-${memberId}`,
+      memberId,
+      offboardedBy,
+      reason,
+      outstandingDebtAmount: totalDebt,
+      debtDisposition,
+      writeOffLedgerEntryId: writeOffLedgerId,
+      advanceBalanceAmount: 0,
+      advanceDisposition: 'none',
+      custodyReassignedTo: reassignee,
+      offboardedAt: new Date().toISOString(),
+    };
+
+    const savedOffb = JSON.parse(localStorage.getItem(KEY_OFFBOARDING_RECORDS) || '[]');
+    savedOffb.unshift(offboardRecord);
+    localStorage.setItem(KEY_OFFBOARDING_RECORDS, JSON.stringify(savedOffb));
+
+    return offboardRecord;
+  }
+
+  // =========================================================================
+  // --- 7. REMINDER QUEUE & TELEGRAM DISPATCH ---
+  // =========================================================================
+  generateGatheringReminders(gathering: Gathering): ReminderQueueEntry[] {
+    const queue: ReminderQueueEntry[] = JSON.parse(localStorage.getItem(KEY_REMINDER_QUEUE) || '[]');
+    const timestamps = getGatheringTimestamps(2019, 1, 27, gathering.startTime || '15:00');
+
+    const entry72h: ReminderQueueEntry = {
+      id: `rem-72h-${gathering.id}`,
+      gatheringId: gathering.id,
+      triggerType: '72_hours',
+      scheduledFor: timestamps.reminder72hTimestamp,
+      channel: 'in_app',
+      status: 'pending',
+      attempts: 0,
+      dedupKey: `dedup-72h-${gathering.id}`,
+      createdAt: new Date().toISOString(),
+    };
+
+    const entry24h: ReminderQueueEntry = {
+      id: `rem-24h-${gathering.id}`,
+      gatheringId: gathering.id,
+      triggerType: '24_hours',
+      scheduledFor: timestamps.reminder24hTimestamp,
+      channel: 'telegram',
+      status: 'pending',
+      attempts: 0,
+      dedupKey: `dedup-24h-${gathering.id}`,
+      createdAt: new Date().toISOString(),
+    };
+
+    const filtered = queue.filter((q) => q.gatheringId !== gathering.id);
+    const updated = [entry72h, entry24h, ...filtered];
+    localStorage.setItem(KEY_REMINDER_QUEUE, JSON.stringify(updated));
+    return [entry72h, entry24h];
+  }
+
+  cancelGatheringReminders(gatheringId: string): void {
+    const queue: ReminderQueueEntry[] = JSON.parse(localStorage.getItem(KEY_REMINDER_QUEUE) || '[]');
+    const updated = queue.map((q) => (q.gatheringId === gatheringId ? { ...q, status: 'cancelled' as const } : q));
+    localStorage.setItem(KEY_REMINDER_QUEUE, JSON.stringify(updated));
+  }
+
+  dispatchTelegramAnnouncement(
+    announcement: Announcement,
+    botToken?: string,
+    chatId?: string
+  ): { success: boolean; log: TelegramDispatchLog; error?: string } {
+    const dedupKey = `msg_announcement_${announcement.id}`;
+    const logs: TelegramDispatchLog[] = JSON.parse(localStorage.getItem(KEY_TELEGRAM_LOG) || '[]');
+
+    if (logs.some((l) => l.dedupKey === dedupKey && l.status === 'sent')) {
+      return { success: true, log: logs.find((l) => l.dedupKey === dedupKey)! };
+    }
+
+    const containsPrivateData =
+      announcement.body.toLowerCase().includes('balance') ||
+      announcement.body.toLowerCase().includes('debt') ||
+      announcement.body.toLowerCase().includes('password') ||
+      announcement.body.includes('የግል ዕዳ');
+
+    if (containsPrivateData) {
+      return { success: false, log: {} as any, error: 'Blocked by Privacy Firewall: Contains confidential member data' };
+    }
+
+    const log: TelegramDispatchLog = {
+      id: `tg-log-${Date.now()}`,
+      announcementId: announcement.id,
+      messageType: 'official_announcement',
+      recipientChatId: chatId || '@medhanialem_mahber_official',
+      deliveredAt: new Date().toISOString(),
+      dedupKey,
+      status: 'sent',
+    };
+
+    logs.unshift(log);
+    localStorage.setItem(KEY_TELEGRAM_LOG, JSON.stringify(logs));
+    return { success: true, log };
+  }
+
+  // =========================================================================
+  // --- 8. AUDIO METADATA & BANDWIDTH TRACKING ---
+  // =========================================================================
+  recordAudioUpload(
+    mezmurId: string,
+    fileInfo: { fileName: string; sizeBytes: number; mimeType: string; durationSeconds?: number },
+    uploadedBy: string = 'm6'
+  ): { success: boolean; record?: MezmurAudioFileRecord; error?: string } {
+    if (fileInfo.sizeBytes > MAX_AUDIO_FILE_SIZE_BYTES) {
+      return { success: false, error: 'Audio file size exceeds 20MB limit' };
+    }
+
+    let bitrate = 96;
+    if (fileInfo.durationSeconds && fileInfo.durationSeconds > 0) {
+      bitrate = Math.round((fileInfo.sizeBytes * 8) / (fileInfo.durationSeconds * 1000));
+    }
+
+    const record: MezmurAudioFileRecord = {
+      id: `audio-${Date.now()}`,
+      mezmurId,
+      fileName: fileInfo.fileName,
+      storageProvider: 'supabase',
+      storagePath: `audio/${mezmurId}/${fileInfo.fileName}`,
+      mimeType: fileInfo.mimeType,
+      fileSizeBytes: fileInfo.sizeBytes,
+      durationSeconds: fileInfo.durationSeconds || 180,
+      estimatedBitrateKbps: bitrate,
+      uploadedBy,
+      totalDownloadsCount: 0,
+      totalEgressBytes: 0,
+      createdAt: new Date().toISOString(),
+    };
+
+    const saved = JSON.parse(localStorage.getItem(KEY_AUDIO_METADATA) || '[]');
+    saved.unshift(record);
+    localStorage.setItem(KEY_AUDIO_METADATA, JSON.stringify(saved));
+    return { success: true, record };
+  }
+
+  // =========================================================================
+  // --- 9. OFFLINE INTENT QUEUE ---
+  // =========================================================================
+  queueOfflineIntent(intent: OfflineSyncIntent): void {
+    const queue: OfflineSyncIntent[] = JSON.parse(localStorage.getItem(KEY_OFFLINE_INTENTS) || '[]');
+    if (queue.some((i) => i.idempotencyKey === intent.idempotencyKey)) return;
+    queue.push(intent);
+    localStorage.setItem(KEY_OFFLINE_INTENTS, JSON.stringify(queue));
+  }
+
+  syncPendingOfflineIntents(): { syncedCount: number; rejectedCount: number } {
+    const queue: OfflineSyncIntent[] = JSON.parse(localStorage.getItem(KEY_OFFLINE_INTENTS) || '[]');
+    let synced = 0;
+    let rejected = 0;
+
+    const updated = queue.map((intent) => {
+      if (intent.status === 'pending') {
+        intent.status = 'synced';
+        synced += 1;
+      }
+      return intent;
+    });
+
+    localStorage.setItem(KEY_OFFLINE_INTENTS, JSON.stringify(updated));
+    return { syncedCount: synced, rejectedCount: rejected };
+  }
 }
 
 export const mahberService = new MahberService();
+
