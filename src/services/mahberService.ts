@@ -123,6 +123,7 @@ const KEY_OFFBOARDING_RECORDS = 'mahber_offboarding_v1';
 const KEY_AUDIO_METADATA = 'mahber_audio_files_v1';
 const KEY_OFFLINE_INTENTS = 'mahber_offline_intents_v1';
 const KEY_PARTICIPATION_AUDIT = 'mahber_participation_audit_v1';
+const KEY_MEMBER_PASSWORDS = 'mahber_passwords_v1';
 
 const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
   {
@@ -2237,16 +2238,55 @@ class MahberService {
   }
 
   // --- INVITATIONS & ACCOUNT ACTIVATION ---
-  getInvitations(): MemberInvitation[] {
-    const data = localStorage.getItem(KEY_INVITATIONS);
+  getMemberPasswords(): Record<string, string> {
+    const data = localStorage.getItem(KEY_MEMBER_PASSWORDS);
     if (data) {
       try {
         return JSON.parse(data);
       } catch {
-        return [];
+        return {};
       }
     }
-    return [];
+    return {};
+  }
+
+  setMemberPassword(memberId: string, passwordSecret: string): void {
+    const passwords = this.getMemberPasswords();
+    passwords[memberId] = passwordSecret;
+    localStorage.setItem(KEY_MEMBER_PASSWORDS, JSON.stringify(passwords));
+  }
+
+  getMemberPassword(memberId: string): string | null {
+    const passwords = this.getMemberPasswords();
+    return passwords[memberId] || null;
+  }
+
+  getInvitations(): MemberInvitation[] {
+    const data = localStorage.getItem(KEY_INVITATIONS);
+    if (data) {
+      try {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch {
+        // fallback
+      }
+    }
+    // Seed initial active invitation for Simon Beyene (m11) for testing activation
+    const initialSeeds: MemberInvitation[] = [
+      {
+        id: 'inv-seed-simon',
+        memberId: 'm11',
+        code: 'MAH-SIMON27',
+        createdBy: 'm1',
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+        isUsed: false,
+      },
+    ];
+    localStorage.setItem(KEY_INVITATIONS, JSON.stringify(initialSeeds));
+    return initialSeeds;
   }
 
   createInvitation(memberId: string, createdBy: string, expiresInHours: number = 72): MemberInvitation {
@@ -2270,6 +2310,32 @@ class MahberService {
     return inv;
   }
 
+  validateInvitation(code: string): {
+    valid: boolean;
+    invitation?: MemberInvitation;
+    member?: Member;
+    error?: string;
+  } {
+    const all = this.getInvitations();
+    const cleanCode = code.trim().toUpperCase();
+    const inv = all.find((i) => i.code.trim().toUpperCase() === cleanCode);
+    if (!inv) {
+      return { valid: false, error: 'Invalid invitation code / ልክ ያልሆነ የግብዣ ኮድ' };
+    }
+
+    if (inv.isUsed) {
+      return { valid: false, error: 'Invitation code has already been redeemed / ይሄ የግብዣ ኮድ ቀድሞ አገልግሎት ላይ ውሏል' };
+    }
+
+    if (new Date() > new Date(inv.expiresAt)) {
+      return { valid: false, error: 'Invitation code has expired / የግብዣው ኮድ ጊዜው አልፏል' };
+    }
+
+    const allMembers = this.getAllMembers();
+    const member = allMembers.find((m) => m.id === inv.memberId);
+    return { valid: true, invitation: inv, member };
+  }
+
   redeemInvitation(code: string): { success: boolean; memberId?: string; error?: string } {
     const all = this.getInvitations();
     const inv = all.find((i) => i.code.trim().toUpperCase() === code.trim().toUpperCase());
@@ -2291,6 +2357,42 @@ class MahberService {
     localStorage.setItem(KEY_INVITATIONS, JSON.stringify(updated));
 
     return { success: true, memberId: inv.memberId };
+  }
+
+  completeInvitationActivation(
+    code: string,
+    newPassword: string
+  ): { success: boolean; memberId?: string; error?: string } {
+    if (!newPassword || newPassword.trim().length < 6) {
+      return {
+        success: false,
+        error: 'Password must be at least 6 characters / የይለፍ ቃል ቢያንስ 6 ፊደላት ወይም ቁጥሮች መሆን አለበት',
+      };
+    }
+
+    const validation = this.validateInvitation(code);
+    if (!validation.valid || !validation.invitation || !validation.member) {
+      return { success: false, error: validation.error || 'Invalid invitation code' };
+    }
+
+    const redeemRes = this.redeemInvitation(code);
+    if (!redeemRes.success || !redeemRes.memberId) {
+      return { success: false, error: redeemRes.error };
+    }
+
+    this.setMemberPassword(redeemRes.memberId, newPassword.trim());
+
+    this.logAuditEvent(
+      redeemRes.memberId,
+      validation.member.name,
+      'Account Activated via Invitation Code',
+      'መለያ በግብዣ ኮድ ነቅቷል',
+      'member',
+      redeemRes.memberId,
+      `Member ${validation.member.name} completed invitation onboarding.`
+    );
+
+    return { success: true, memberId: redeemRes.memberId };
   }
 
   // --- AUDIO VALIDATION HELPER ---

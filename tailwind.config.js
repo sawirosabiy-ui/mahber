@@ -10,14 +10,16 @@ export default {
       colors: {
         mahber: {
           bg: {
-            dark: '#151311',
-            light: '#F5EFE7',
+            dark: '#0E1210',
+            charcoal: '#141A17',
+            light: '#FAF8F2',
+            parchment: '#F2EDE0',
           },
           surface: {
-            dark: '#201D19',
+            dark: '#141A17',
             light: '#FFFDF8',
-            elevatedDark: '#29251F',
-            elevatedLight: '#F7F2E8',
+            elevatedDark: '#1B2420',
+            elevatedLight: '#F3EFE6',
           },
           gold: {
             DEFAULT: '#B89A5A',

@@ -16,7 +16,8 @@ interface AuthContextType {
   hasRole: (role: AdminRole) => boolean;
   isAuthenticated: boolean;
   loginWithCredentials: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  activateAccountWithInvite: (inviteCode: string) => Promise<{ success: boolean; error?: string }>;
+  validateInviteCode: (inviteCode: string) => { valid: boolean; member?: Member; error?: string };
+  activateAccountWithInvite: (inviteCode: string, password?: string) => Promise<{ success: boolean; member?: Member; error?: string }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
   switchUser: (memberId: string) => void;
@@ -113,9 +114,31 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return (currentUser.roles || []).includes(role);
   };
 
+  const validateInviteCode = (inviteCode: string): { valid: boolean; member?: Member; error?: string } => {
+    const res = mahberService.validateInvitation(inviteCode);
+    if (!res.valid || !res.member) {
+      return { valid: false, error: res.error || 'Invalid or expired invitation code' };
+    }
+    return { valid: true, member: res.member };
+  };
+
   const activateAccountWithInvite = async (
-    inviteCode: string
-  ): Promise<{ success: boolean; error?: string }> => {
+    inviteCode: string,
+    password?: string
+  ): Promise<{ success: boolean; member?: Member; error?: string }> => {
+    if (password) {
+      const res = mahberService.completeInvitationActivation(inviteCode, password);
+      if (!res.success || !res.memberId) {
+        return { success: false, error: res.error || 'Failed to activate invitation' };
+      }
+      const target = members.find((m) => m.id === res.memberId);
+      if (target) {
+        setCurrentUserId(target.id);
+        setIsAuthenticated(true);
+        return { success: true, member: target };
+      }
+    }
+
     const res = mahberService.redeemInvitation(inviteCode);
     if (!res.success || !res.memberId) {
       return { success: false, error: res.error || 'Invalid or expired invitation code' };
@@ -128,7 +151,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     setCurrentUserId(target.id);
     setIsAuthenticated(true);
-    return { success: true };
+    return { success: true, member: target };
   };
 
   const loginWithCredentials = async (
@@ -173,7 +196,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
 
     if (matched) {
-      if (password === 'Mahber2026!' || password.length >= 6) {
+      const customPassword = mahberService.getMemberPassword(matched.id);
+      const isPasswordValid = customPassword
+        ? customPassword === password
+        : (password === 'Mahber2026!' || password.length >= 6);
+
+      if (isPasswordValid) {
         setCurrentUserId(matched.id);
         setIsAuthenticated(true);
         return { success: true };
@@ -318,6 +346,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         hasRole,
         isAuthenticated,
         loginWithCredentials,
+        validateInviteCode,
         activateAccountWithInvite,
         signOut,
         resetPassword,

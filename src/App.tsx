@@ -22,6 +22,7 @@ import { ContributionView } from './components/contribution/ContributionView';
 import { MezmurView } from './components/mezmur/MezmurView';
 import { RoomView } from './components/room/RoomView';
 import { MoreSettings } from './components/settings/MoreSettings';
+import { MemberDirectory } from './components/members/MemberDirectory';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { WelcomeSplash } from './components/welcome/WelcomeSplash';
 import { LoginView } from './components/auth/LoginView';
@@ -42,6 +43,9 @@ const MahberAppContent: React.FC = () => {
   });
   const [activeTab, setActiveTab] = useState<NavTab>('home');
   const [previousTab, setPreviousTab] = useState<NavTab>('home');
+  const [isAdminMode, setIsAdminMode] = useState<boolean>(() => {
+    return isAdmin;
+  });
 
   // Admin Security Unlock State (persisted in sessionStorage)
   const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => {
@@ -243,16 +247,19 @@ const MahberAppContent: React.FC = () => {
   const currentStudyMezmur = mezmurs.find((m) => m.status === 'current_study');
 
   return (
-    <div className="min-h-screen bg-[#0e0c0b] text-[#F5EFE3] flex flex-col items-center">
+    <div className="min-h-screen bg-[#0E1210] dark:bg-[#0E1210] light:bg-[#FAF8F2] text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E] flex flex-col items-center">
       {/* Main Mobile App Container */}
       <div
-        className="w-full max-w-md min-h-screen bg-[#151311] dark:bg-[#151311] light:bg-[#F7F7F3] shadow-2xl relative flex flex-col border-x border-[#B89A5A]/15 pb-20"
+        className="w-full max-w-md min-h-screen bg-[#141A17] dark:bg-[#141A17] light:bg-[#FFFDF8] shadow-2xl relative flex flex-col border-x border-[#B89A5A]/20 pb-20"
       >
-        {/* Top App Bar with Notification Bell */}
+        {/* Top App Bar with Notification Bell and Role Selector */}
         <AppBar
           onProfileClick={() => setActiveTab('more')}
           onNotificationsClick={() => setShowNotifications(true)}
+          onRoomClick={() => setActiveTab('room')}
           unreadCount={mahberService.getUnreadCount(currentUser.id)}
+          isAdminMode={isAdminMode}
+          onToggleAdminMode={() => setIsAdminMode((prev) => !prev)}
         />
 
         {/* Content Body with Loading & Error States */}
@@ -269,12 +276,13 @@ const MahberAppContent: React.FC = () => {
                   attendance={attendance}
                   contribution={currentMemberContribution}
                   currentMezmur={currentStudyMezmur}
+                  isAdminMode={isAdminMode}
                   onAttendanceUpdate={handleAttendanceUpdate}
                   onNavigateTab={(tab) => setActiveTab(tab)}
                 />
               )}
 
-              {activeTab === 'mahber' && gathering && (
+              {(activeTab === 'gatherings' || activeTab === 'mahber') && gathering && (
                 <MahberGathering
                   gathering={gathering}
                   attendance={attendance}
@@ -286,6 +294,14 @@ const MahberAppContent: React.FC = () => {
                   }}
                   onRefreshHistory={() => setHistory(mahberService.getHistory())}
                   onNavigateTab={(tab) => handleSelectTab(tab)}
+                />
+              )}
+
+              {activeTab === 'finance' && (
+                <ContributionView
+                  contribution={currentMemberContribution}
+                  contributions={Object.values(contributions)}
+                  allMembers={allMembers}
                 />
               )}
 
@@ -319,7 +335,14 @@ const MahberAppContent: React.FC = () => {
                 />
               )}
 
-              {/* ADMIN ACCESS WITH PASSWORD GATE (Requires mahber@27) */}
+              {/* MEMBER DIRECTORY (Photo 13 & 16) */}
+              {activeTab === 'members' && (
+                <MemberDirectory
+                  onNavigateTab={(tab) => setActiveTab(tab)}
+                />
+              )}
+
+              {/* ADMIN DASHBOARD WITH PASSWORD GATE (Requires mahber@27) */}
               {activeTab === 'admin' && (
                 isAdminUnlocked ? (
                   <AdminDashboard
@@ -377,6 +400,7 @@ const MahberAppContent: React.FC = () => {
           activeTab={activeTab}
           onSelectTab={handleSelectTab}
           roomUnreadCount={mahberService.getUnreadCount(currentUser.id)}
+          isAdminMode={isAdminMode}
         />
 
         {/* Sacred Notification Center Drawer/Modal */}

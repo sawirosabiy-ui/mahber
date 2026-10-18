@@ -55,6 +55,7 @@ import {
 } from 'lucide-react';
 
 interface AdminDashboardProps {
+  initialSection?: 'overview' | 'gatherings' | 'members' | 'attendance' | 'payments' | 'rotation' | 'fund' | 'mezmur' | 'audit';
   gathering: Gathering | null;
   attendance: AttendanceRecord[];
   contributions: Record<string, MemberContribution>;
@@ -72,6 +73,7 @@ interface AdminDashboardProps {
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
+  initialSection,
   gathering,
   attendance,
   contributions,
@@ -104,7 +106,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const [activeSection, setActiveSection] = useState<
     'overview' | 'gatherings' | 'members' | 'attendance' | 'payments' | 'rotation' | 'fund' | 'mezmur' | 'audit'
-  >('overview');
+  >(initialSection || 'overview');
 
   // Invitation Generation State
   const [generatedInviteMember, setGeneratedInviteMember] = useState<{ memberName: string; code: string } | null>(null);

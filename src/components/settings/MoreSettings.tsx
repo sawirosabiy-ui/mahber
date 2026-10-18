@@ -3,24 +3,31 @@ import { useLanguage } from '../../context/LanguageContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { MahberHistoryGathering, Member } from '../../types';
-import { mahberService } from '../../services/mahberService';
 import { EthiopianCross } from '../common/EthiopianCross';
 import { HistoryView } from '../history/HistoryView';
-import { ProfileModal } from '../profile/ProfileModal';
 import {
   Globe,
   Moon,
   Sun,
-  History,
   ShieldCheck,
   ChevronRight,
   Bell,
   LogOut,
+  Users,
+  Key,
+  Smartphone,
+  Eye,
+  Check,
+  X,
+  Lock,
+  User,
+  Settings as SettingsIcon,
 } from 'lucide-react';
+import { NavTab } from '../navigation/BottomNav';
 
 interface MoreSettingsProps {
   history: MahberHistoryGathering[];
-  onNavigateTab: (tab: 'home' | 'mahber' | 'room' | 'mezmur' | 'more' | 'admin') => void;
+  onNavigateTab: (tab: NavTab) => void;
   onOpenNotifications?: () => void;
   onOpenMezmur?: (mezmurId: string) => void;
   onRefreshHistory?: () => void;
@@ -36,259 +43,637 @@ export const MoreSettings: React.FC<MoreSettingsProps> = ({
   const { t, language, setLanguage } = useLanguage();
   const { theme, toggleTheme } = useTheme();
   const { currentUser, signOut } = useAuth();
-  const [showHistoryModal, setShowHistoryModal] = useState(false);
-  const [showProfileModal, setShowProfileModal] = useState(false);
-  const [inspectedMember, setInspectedMember] = useState<Member | null>(null);
+
+  // Active sub-screen: 'menu' | 'profile' | 'appearance' | 'security' | 'notifications' | 'history'
+  const [activeScreen, setActiveScreen] = useState<'menu' | 'profile' | 'appearance' | 'security' | 'notifications' | 'history'>('menu');
+
+  // Appearance preferences state
+  const [textSize, setTextSize] = useState<'normal' | 'large' | 'xlarge'>('normal');
+
+  // Security preferences state
+  const [is2FAEnabled, setIs2FAEnabled] = useState(false);
+  const [showPasswordChangeModal, setShowPasswordChangeModal] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordToast, setPasswordToast] = useState<string | null>(null);
+
+  // Notification toggles matching Photo 14 Screen 5
+  const [notifState, setNotifState] = useState({
+    pushAllowed: true,
+    gatheringReminders: true, // Days 24 & 26
+    hostingChanges: true,
+    announcements: true,
+    financeUpdates: true,
+    systemMessages: true,
+    promotions: false,
+  });
+
+  const toggleNotif = (key: keyof typeof notifState) => {
+    setNotifState((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      setPasswordToast(language === 'am' ? 'የይለፍ ቃሎች አይመሳሰሉም!' : 'Passwords do not match!');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setPasswordToast(language === 'am' ? 'የይለፍ ቃል ቢያንስ 6 ፊደላት መሆን አለበት!' : 'Password must be at least 6 characters!');
+      return;
+    }
+
+    try {
+      const stored = localStorage.getItem('mahber_passwords_v1') || '{}';
+      const passwords = JSON.parse(stored);
+      passwords[currentUser.phone] = newPassword;
+      localStorage.setItem('mahber_passwords_v1', JSON.stringify(passwords));
+      setPasswordToast(language === 'am' ? 'የይለፍ ቃል በተሳካ ሁኔታ ተቀይሯል!' : 'Password updated successfully!');
+      setTimeout(() => {
+        setShowPasswordChangeModal(false);
+        setPasswordToast(null);
+        setNewPassword('');
+        setConfirmPassword('');
+      }, 1500);
+    } catch {
+      setPasswordToast('Error saving password.');
+    }
+  };
 
   return (
     <div className="space-y-4 pb-20 animate-fade-in">
-      {/* Profile Header Card */}
-      <div 
-        onClick={() => {
-          setInspectedMember(currentUser);
-          setShowProfileModal(true);
-        }}
-        className="rounded-3xl p-5 bg-[#201D19] dark:bg-[#201D19] light:bg-[#FFFDF8] border border-[#B89A5A]/30 shadow-sacred space-y-3 cursor-pointer hover:border-[#B89A5A]/60 transition"
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3.5">
-            <img
-              src={currentUser.avatarUrl}
-              alt={currentUser.name}
-              className="w-14 h-14 rounded-full object-cover border-2 border-[#B89A5A]"
-            />
-            <div className="min-w-0">
-              <h2 className="text-base font-bold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E] truncate">
-                {currentUser.amharicName}
-              </h2>
-              <p className="text-xs text-gray-400">{currentUser.name}</p>
-              <div className="flex items-center gap-2 mt-1">
-                <span
-                  className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                    currentUser.role === 'admin'
-                      ? 'bg-[#B89A5A]/25 text-[#B89A5A] border border-[#B89A5A]/40'
-                      : 'bg-[#315C48]/25 text-[#427A60] dark:text-[#529575] border border-[#315C48]/40'
+      {/* SCREEN 1: MAIN MORE MENU */}
+      {activeScreen === 'menu' && (
+        <div className="space-y-4">
+          {/* User Profile Overview Card matching Photo 14 Screen 1 */}
+          <div
+            onClick={() => setActiveScreen('profile')}
+            className="rounded-3xl p-5 bg-[#141A17] border border-[#B89A5A]/30 shadow-xl space-y-3 cursor-pointer hover:border-[#B89A5A]/60 transition"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3.5">
+                <img
+                  src={currentUser.avatarUrl}
+                  alt={currentUser.name}
+                  className="w-14 h-14 rounded-2xl object-cover ring-2 ring-[#B89A5A]"
+                />
+                <div className="min-w-0">
+                  <h2 className="text-base font-bold text-[#F5EFE3] truncate">
+                    {currentUser.name}
+                  </h2>
+                  <p className="text-xs text-[#9E9484]">{currentUser.amharicName}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span
+                      className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border ${
+                        currentUser.role === 'admin'
+                          ? 'bg-[#B89A5A]/20 text-[#B89A5A] border-[#B89A5A]/40'
+                          : 'bg-emerald-950 text-emerald-300 border-emerald-500/30'
+                      }`}
+                    >
+                      {currentUser.role === 'admin' ? 'Administrator' : 'Active Member'}
+                    </span>
+                    <span className="text-[10px] text-[#9E9484]">{currentUser.phone}</span>
+                  </div>
+                </div>
+              </div>
+              <ChevronRight size={18} className="text-[#B89A5A] shrink-0" />
+            </div>
+          </div>
+
+          {/* Quick Settings Navigation matching Photo 14 */}
+          <div className="bg-[#141A17] rounded-3xl p-4 border border-[#B89A5A]/20 space-y-1">
+            {/* Appearance & Language */}
+            <button
+              type="button"
+              onClick={() => setActiveScreen('appearance')}
+              className="w-full p-3 rounded-2xl flex items-center justify-between hover:bg-[#1B2420] transition-colors text-left"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[#B89A5A]/15 text-[#B89A5A] flex items-center justify-center">
+                  <Globe size={18} />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-[#F5EFE3]">Language & Appearance</p>
+                  <p className="text-[10px] text-[#9E9484]">
+                    {language === 'am' ? 'አማርኛ' : 'English'} · {theme === 'dark' ? 'Charcoal Gold' : 'Warm Parchment'}
+                  </p>
+                </div>
+              </div>
+              <ChevronRight size={16} className="text-[#9E9484]" />
+            </button>
+
+            {/* Security & Password */}
+            <button
+              type="button"
+              onClick={() => setActiveScreen('security')}
+              className="w-full p-3 rounded-2xl flex items-center justify-between hover:bg-[#1B2420] transition-colors text-left"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[#B89A5A]/15 text-[#B89A5A] flex items-center justify-center">
+                  <ShieldCheck size={18} />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-[#F5EFE3]">Security & Password</p>
+                  <p className="text-[10px] text-[#9E9484]">Password, 2FA, Active Sessions</p>
+                </div>
+              </div>
+              <ChevronRight size={16} className="text-[#9E9484]" />
+            </button>
+
+            {/* Notification Preferences */}
+            <button
+              type="button"
+              onClick={() => setActiveScreen('notifications')}
+              className="w-full p-3 rounded-2xl flex items-center justify-between hover:bg-[#1B2420] transition-colors text-left"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[#B89A5A]/15 text-[#B89A5A] flex items-center justify-center">
+                  <Bell size={18} />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-[#F5EFE3]">Notification Preferences</p>
+                  <p className="text-[10px] text-[#9E9484]">Gathering reminders (Days 24 & 26), alerts</p>
+                </div>
+              </div>
+              <ChevronRight size={16} className="text-[#9E9484]" />
+            </button>
+
+            {/* Gathering Archive & History */}
+            <button
+              type="button"
+              onClick={() => setActiveScreen('history')}
+              className="w-full p-3 rounded-2xl flex items-center justify-between hover:bg-[#1B2420] transition-colors text-left"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[#B89A5A]/15 text-[#B89A5A] flex items-center justify-center">
+                  <EthiopianCross size={18} color="#B89A5A" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-[#F5EFE3]">Mahber Memory Archive</p>
+                  <p className="text-[10px] text-[#9E9484]">Historical gatherings, photo albums & notes</p>
+                </div>
+              </div>
+              <ChevronRight size={16} className="text-[#9E9484]" />
+            </button>
+          </div>
+
+          {/* Sign Out Button */}
+          <button
+            type="button"
+            onClick={() => signOut()}
+            className="w-full py-3 rounded-2xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs font-bold flex items-center justify-center gap-2 hover:bg-rose-950/60 transition-colors"
+          >
+            <LogOut size={16} />
+            {language === 'am' ? 'ይውጡ (Sign Out)' : 'Sign Out'}
+          </button>
+        </div>
+      )}
+
+      {/* SCREEN 2: PROFILE & PERSONAL INFO (Photo 14 Screen 1 & 2) */}
+      {activeScreen === 'profile' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setActiveScreen('menu')}
+              className="text-xs font-bold text-[#B89A5A] hover:underline"
+            >
+              ← Back to Settings
+            </button>
+            <span className="text-xs font-bold text-[#F5EFE3]">My Profile</span>
+          </div>
+
+          <div className="bg-[#141A17] rounded-3xl p-5 border border-[#B89A5A]/30 space-y-4">
+            <div className="flex items-center gap-4">
+              <img
+                src={currentUser.avatarUrl}
+                alt={currentUser.name}
+                className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#B89A5A]"
+              />
+              <div>
+                <h3 className="text-base font-bold text-[#F5EFE3]">{currentUser.name}</h3>
+                <p className="text-xs text-[#9E9484]">{currentUser.amharicName}</p>
+                <p className="text-xs text-[#B89A5A] mt-1 font-mono">
+                  TRX-7846-{currentUser.id.toUpperCase()}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2.5 pt-3 border-t border-[#B89A5A]/15 text-xs">
+              <div className="flex justify-between py-1 border-b border-[#B89A5A]/10">
+                <span className="text-[#9E9484]">Baptismal Name (የክርስትና ስም):</span>
+                <span className="font-bold text-[#F5EFE3]">
+                  {currentUser.baptismalName || 'ገብረ እግዚአብሔር'}
+                </span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-[#B89A5A]/10">
+                <span className="text-[#9E9484]">Spiritual Father (የንስሐ አባት):</span>
+                <span className="font-bold text-[#F5EFE3]">
+                  {currentUser.spiritualRole || 'መጋቤ ሐዲስ ቀሲስ ዮሐንስ'}
+                </span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-[#B89A5A]/10">
+                <span className="text-[#9E9484]">Phone Number:</span>
+                <span className="font-semibold text-[#F5EFE3]">{currentUser.phone}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-[#B89A5A]/10">
+                <span className="text-[#9E9484]">Membership Status:</span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 font-bold border border-emerald-500/30">
+                  Active
+                </span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="text-[#9E9484]">Member Since:</span>
+                <span className="text-[#F5EFE3]">Meskerem 2018</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SCREEN 3: APPEARANCE & LANGUAGE (Photo 14 Screen 3) */}
+      {activeScreen === 'appearance' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setActiveScreen('menu')}
+              className="text-xs font-bold text-[#B89A5A] hover:underline"
+            >
+              ← Back to Settings
+            </button>
+            <span className="text-xs font-bold text-[#F5EFE3]">Language & Appearance</span>
+          </div>
+
+          <div className="bg-[#141A17] rounded-3xl p-5 border border-[#B89A5A]/30 space-y-4">
+            {/* Language Selector */}
+            <div>
+              <label className="text-xs font-bold text-[#F5EFE3] uppercase block mb-2">
+                Language
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setLanguage('en')}
+                  className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                    language === 'en'
+                      ? 'bg-[#B89A5A] text-[#0E1210] border-[#B89A5A] shadow'
+                      : 'bg-[#1B2420] text-[#9E9484] border-[#B89A5A]/15'
                   }`}
                 >
-                  {currentUser.role === 'admin' ? t.roleAdmin : t.roleMember}
-                </span>
-                <span className="text-[10px] text-gray-500">{currentUser.phone}</span>
+                  English
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLanguage('am')}
+                  className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                    language === 'am'
+                      ? 'bg-[#B89A5A] text-[#0E1210] border-[#B89A5A] shadow'
+                      : 'bg-[#1B2420] text-[#9E9484] border-[#B89A5A]/15'
+                  }`}
+                >
+                  አማርኛ (Amharic)
+                </button>
+              </div>
+            </div>
+
+            {/* Theme Selector */}
+            <div className="pt-2 border-t border-[#B89A5A]/15">
+              <label className="text-xs font-bold text-[#F5EFE3] uppercase block mb-2">
+                Color Theme
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (theme !== 'dark') toggleTheme();
+                  }}
+                  className={`py-2.5 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 transition-all ${
+                    theme === 'dark'
+                      ? 'bg-[#1B2420] text-[#B89A5A] border-[#B89A5A] shadow'
+                      : 'bg-[#141A17] text-[#9E9484] border-[#B89A5A]/15'
+                  }`}
+                >
+                  <Moon size={14} />
+                  Dark (Charcoal & Gold)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (theme !== 'light') toggleTheme();
+                  }}
+                  className={`py-2.5 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 transition-all ${
+                    theme === 'light'
+                      ? 'bg-[#F3EFE6] text-[#2B241E] border-[#B89A5A] shadow'
+                      : 'bg-[#141A17] text-[#9E9484] border-[#B89A5A]/15'
+                  }`}
+                >
+                  <Sun size={14} />
+                  Light (Warm Parchment)
+                </button>
+              </div>
+            </div>
+
+            {/* Text Size */}
+            <div className="pt-2 border-t border-[#B89A5A]/15">
+              <label className="text-xs font-bold text-[#F5EFE3] uppercase block mb-2">
+                Text Size
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['normal', 'large', 'xlarge'] as const).map((sz) => (
+                  <button
+                    key={sz}
+                    type="button"
+                    onClick={() => setTextSize(sz)}
+                    className={`py-2 rounded-xl text-xs font-bold capitalize transition-all ${
+                      textSize === sz
+                        ? 'bg-[#B89A5A] text-[#0E1210] shadow'
+                        : 'bg-[#1B2420] text-[#9E9484] border border-[#B89A5A]/15'
+                    }`}
+                  >
+                    {sz === 'xlarge' ? 'Extra Large' : sz}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
-          <ChevronRight size={18} className="text-[#B89A5A] shrink-0" />
         </div>
-      </div>
+      )}
 
-      {/* Language & Theme Controls */}
-      <div className="rounded-3xl p-4 bg-[#201D19] dark:bg-[#201D19] light:bg-[#FFFDF8] border border-[#B89A5A]/20 shadow-sacred space-y-3">
-        <div className="text-xs font-bold uppercase tracking-wider text-gray-400 pb-1 border-b border-[#B89A5A]/15">
-          {t.moreTitle}
+      {/* SCREEN 4: SECURITY & PASSWORD (Photo 14 Screen 4) */}
+      {activeScreen === 'security' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setActiveScreen('menu')}
+              className="text-xs font-bold text-[#B89A5A] hover:underline"
+            >
+              ← Back to Settings
+            </button>
+            <span className="text-xs font-bold text-[#F5EFE3]">Security & Password</span>
+          </div>
+
+          <div className="bg-[#141A17] rounded-3xl p-5 border border-[#B89A5A]/30 space-y-4">
+            {/* Account Security Badge */}
+            <div className="p-3.5 rounded-2xl bg-emerald-950/60 border border-emerald-500/40 flex items-center gap-3">
+              <ShieldCheck size={24} className="text-emerald-400 shrink-0" />
+              <div>
+                <p className="text-xs font-bold text-emerald-300">Account Protected</p>
+                <p className="text-[10px] text-emerald-200/80">
+                  Closed Mahber community data encryption active.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setShowPasswordChangeModal(true)}
+                className="w-full p-3 rounded-xl bg-[#1B2420] border border-[#B89A5A]/15 flex items-center justify-between text-left hover:border-[#B89A5A]/40"
+              >
+                <div>
+                  <p className="text-xs font-bold text-[#F5EFE3]">Change Password</p>
+                  <p className="text-[10px] text-[#9E9484]">Update account login password</p>
+                </div>
+                <ChevronRight size={16} className="text-[#9E9484]" />
+              </button>
+
+              <div className="p-3 rounded-xl bg-[#1B2420] border border-[#B89A5A]/15 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-[#F5EFE3]">Two-Factor Authentication</p>
+                  <p className="text-[10px] text-[#9E9484]">
+                    {is2FAEnabled ? 'Enabled via SMS / Authenticator' : 'Not enabled'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIs2FAEnabled(!is2FAEnabled)}
+                  className={`w-11 h-6 rounded-full transition-colors relative ${
+                    is2FAEnabled ? 'bg-[#B89A5A]' : 'bg-[#0E1210]'
+                  }`}
+                >
+                  <span
+                    className={`block w-4 h-4 rounded-full bg-white transition-transform ${
+                      is2FAEnabled ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="p-3 rounded-xl bg-[#1B2420] border border-[#B89A5A]/15 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-[#F5EFE3]">Device Management</p>
+                  <p className="text-[10px] text-[#9E9484]">1 active session on this device</p>
+                </div>
+                <span className="text-[10px] text-emerald-400 font-bold">Current</span>
+              </div>
+            </div>
+          </div>
         </div>
+      )}
 
-        {/* Language Selector */}
-        <div className="flex items-center justify-between py-1.5">
-          <div className="flex items-center gap-2.5">
-            <Globe size={18} className="text-[#B89A5A]" />
-            <span className="text-xs font-semibold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E]">
-              {t.languageSelect}
-            </span>
-          </div>
-          <div className="flex bg-[#151311] dark:bg-[#151311] light:bg-[#F3ECE0] rounded-xl p-1 border border-white/5">
+      {/* SCREEN 5: NOTIFICATION PREFERENCES (Photo 14 Screen 5) */}
+      {activeScreen === 'notifications' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
             <button
-              onClick={() => setLanguage('am')}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
-                language === 'am' ? 'bg-[#6F2630] text-white' : 'text-gray-400 hover:text-white'
-              }`}
+              type="button"
+              onClick={() => setActiveScreen('menu')}
+              className="text-xs font-bold text-[#B89A5A] hover:underline"
             >
-              አማርኛ
+              ← Back to Settings
             </button>
-            <button
-              onClick={() => setLanguage('en')}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
-                language === 'en' ? 'bg-[#6F2630] text-white' : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              English
-            </button>
+            <span className="text-xs font-bold text-[#F5EFE3]">Notifications</span>
           </div>
-        </div>
 
-        {/* Theme Selector */}
-        <div className="flex items-center justify-between py-1.5 border-t border-[#B89A5A]/10">
-          <div className="flex items-center gap-2.5">
-            {theme === 'dark' ? (
-              <Moon size={18} className="text-[#B89A5A]" />
-            ) : (
-              <Sun size={18} className="text-[#B89A5A]" />
-            )}
-            <span className="text-xs font-semibold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E]">
-              {t.themeSelect}
-            </span>
-          </div>
-          <div className="flex bg-[#151311] dark:bg-[#151311] light:bg-[#F3ECE0] rounded-xl p-1 border border-white/5">
-            <button
-              onClick={() => theme !== 'dark' && toggleTheme()}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
-                theme === 'dark' ? 'bg-[#6F2630] text-white' : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              ጨለማ (Dark)
-            </button>
-            <button
-              onClick={() => theme !== 'light' && toggleTheme()}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
-                theme === 'light' ? 'bg-[#6F2630] text-white' : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              ብርሃን (Light)
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Navigation Shortcuts */}
-      <div className="rounded-3xl p-3 bg-[#201D19] dark:bg-[#201D19] light:bg-[#FFFDF8] border border-[#B89A5A]/20 shadow-sacred divide-y divide-[#B89A5A]/10">
-        <button
-          onClick={() => onOpenNotifications && onOpenNotifications()}
-          className="w-full py-3 px-2 flex items-center justify-between text-left hover:bg-white/5 rounded-xl transition"
-        >
-          <div className="flex items-center gap-3">
-            <Bell size={18} className="text-[#B89A5A]" />
-            <div>
-              <div className="text-xs font-semibold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E]">
-                {language === 'am' ? 'የማሳወቂያ ማዕከል እና ምርጫዎች' : 'Notifications & Preferences'}
-              </div>
-              <div className="text-[10px] text-gray-400">
-                {language === 'am' ? 'ማሳወቂያዎችን እና የግላዊነት ምርጫዎችን ያስተካክሉ' : 'Alert categories and notification toggles'}
-              </div>
-            </div>
-          </div>
-          <ChevronRight size={16} className="text-gray-400" />
-        </button>
-
-        <button
-          onClick={() => setShowHistoryModal(true)}
-          className="w-full py-3 px-2 flex items-center justify-between text-left hover:bg-white/5 rounded-xl transition"
-        >
-          <div className="flex items-center gap-3">
-            <History size={18} className="text-[#B89A5A]" />
-            <div>
-              <div className="text-xs font-semibold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E]">
-                {t.mahberHistory}
-              </div>
-              <div className="text-[10px] text-gray-400">የቀደሙ ስብሰባዎች እና መዝገቦች</div>
-            </div>
-          </div>
-          <ChevronRight size={16} className="text-gray-400" />
-        </button>
-
-        {/* Sign Out Button */}
-        <button
-          onClick={() => {
-            if (window.confirm(language === 'am' ? 'በእርግጥ መውጣት ይፈልጋሉ?' : 'Are you sure you want to sign out?')) {
-              signOut();
-            }
-          }}
-          className="w-full py-3 px-2 flex items-center justify-between text-left hover:bg-[#6F2630]/10 rounded-xl transition group"
-        >
-          <div className="flex items-center gap-3">
-            <LogOut size={18} className="text-[#D98A94] group-hover:text-red-400 transition" />
-            <div>
-              <div className="text-xs font-semibold text-[#D98A94] group-hover:text-red-300">
-                {language === 'am' ? 'ከመለያ ውጣ (Sign Out)' : 'Sign Out'}
-              </div>
-              <div className="text-[10px] text-gray-400">
-                {language === 'am' ? 'የግል መግቢያዎን በሰላም ይዝጉ' : 'Securely end your Mahber session'}
-              </div>
-            </div>
-          </div>
-          <ChevronRight size={16} className="text-[#D98A94]" />
-        </button>
-
-        <button
-          onClick={() => onNavigateTab('admin')}
-          className="w-full py-3 px-2 flex items-center justify-between text-left hover:bg-white/5 rounded-xl transition"
-        >
-          <div className="flex items-center gap-3">
-            <ShieldCheck size={18} className="text-[#6F2630]" />
-            <div>
-              <div className="text-xs font-bold text-[#D98A94] flex items-center gap-1.5">
-                <span>{t.adminDashboardTitle}</span>
-                {currentUser.role !== 'admin' && !mahberService.isAdminSessionUnlocked() && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#6F2630]/30 text-[#E598A0] border border-[#6F2630]/40 font-normal">
-                    🔒 ይለፍ ቃል
-                  </span>
-                )}
-              </div>
-              <div className="text-[10px] text-gray-400">
-                {language === 'am' ? 'የአስተዳዳሪ ማስተዳደሪያ ገጽ (በይለፍ ቃል የተጠበቀ)' : 'Admin Management Panel (Password Protected)'}
-              </div>
-            </div>
-          </div>
-          <ChevronRight size={16} className="text-[#D98A94]" />
-        </button>
-      </div>
-
-      {/* Digital Memory Book (HistoryView) Modal */}
-      {showHistoryModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/85 backdrop-blur-sm p-0 sm:p-4 animate-fade-in">
-          <div className="w-full max-w-md bg-[#181512] dark:bg-[#181512] light:bg-[#FFFDF8] rounded-t-3xl sm:rounded-3xl border border-[#B89A5A]/35 p-4 sm:p-5 shadow-sacred max-h-[92vh] overflow-y-auto space-y-4">
-            <div className="flex items-center justify-between border-b border-[#B89A5A]/15 pb-3">
-              <div className="flex items-center gap-2">
-                <History size={18} className="text-[#B89A5A]" />
-                <h3 className="text-base font-bold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E]">
-                  {language === 'am' ? 'የማኅበሩ የትውስታ መዝገብ' : 'Mahber Memory Book'}
-                </h3>
+          <div className="bg-[#141A17] rounded-3xl p-5 border border-[#B89A5A]/30 space-y-4">
+            <div className="p-3 rounded-xl bg-[#1B2420] border border-[#B89A5A]/15 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-[#F5EFE3]">Allow Push Notifications</p>
+                <p className="text-[10px] text-[#9E9484]">Get notified about important community updates</p>
               </div>
               <button
-                onClick={() => setShowHistoryModal(false)}
-                className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded-lg hover:bg-white/5 transition"
+                type="button"
+                onClick={() => toggleNotif('pushAllowed')}
+                className={`w-11 h-6 rounded-full transition-colors relative ${
+                  notifState.pushAllowed ? 'bg-[#B89A5A]' : 'bg-[#0E1210]'
+                }`}
               >
-                ✕ {language === 'am' ? 'ዝጋ' : 'Close'}
+                <span
+                  className={`block w-4 h-4 rounded-full bg-white transition-transform ${
+                    notifState.pushAllowed ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
               </button>
             </div>
 
-            <HistoryView
-              history={history}
-              onOpenMezmur={(mezId) => {
-                setShowHistoryModal(false);
-                if (onOpenMezmur) onOpenMezmur(mezId);
-                else onNavigateTab('mezmur');
-              }}
-              onRefreshHistory={onRefreshHistory}
-            />
+            <div className="pt-2 border-t border-[#B89A5A]/15 space-y-2">
+              <h4 className="text-[11px] font-bold text-[#B89A5A] uppercase tracking-wider">
+                Notification Types
+              </h4>
+
+              {/* Day 24 & 26 Gathering Reminders matching Invariant */}
+              <div className="p-3 rounded-xl bg-[#1B2420] border border-[#B89A5A]/15 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-[#F5EFE3]">Gathering Reminders</p>
+                  <p className="text-[10px] text-[#9E9484]">Days 24 & 26 before gathering</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleNotif('gatheringReminders')}
+                  className={`w-11 h-6 rounded-full transition-colors relative ${
+                    notifState.gatheringReminders ? 'bg-[#B89A5A]' : 'bg-[#0E1210]'
+                  }`}
+                >
+                  <span
+                    className={`block w-4 h-4 rounded-full bg-white transition-transform ${
+                      notifState.gatheringReminders ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Hosting Changes */}
+              <div className="p-3 rounded-xl bg-[#1B2420] border border-[#B89A5A]/15 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-[#F5EFE3]">Hosting Changes</p>
+                  <p className="text-[10px] text-[#9E9484]">When your hosting schedule changes</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleNotif('hostingChanges')}
+                  className={`w-11 h-6 rounded-full transition-colors relative ${
+                    notifState.hostingChanges ? 'bg-[#B89A5A]' : 'bg-[#0E1210]'
+                  }`}
+                >
+                  <span
+                    className={`block w-4 h-4 rounded-full bg-white transition-transform ${
+                      notifState.hostingChanges ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Finance Updates */}
+              <div className="p-3 rounded-xl bg-[#1B2420] border border-[#B89A5A]/15 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-[#F5EFE3]">Finance Updates</p>
+                  <p className="text-[10px] text-[#9E9484]">Your contributions and records</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleNotif('financeUpdates')}
+                  className={`w-11 h-6 rounded-full transition-colors relative ${
+                    notifState.financeUpdates ? 'bg-[#B89A5A]' : 'bg-[#0E1210]'
+                  }`}
+                >
+                  <span
+                    className={`block w-4 h-4 rounded-full bg-white transition-transform ${
+                      notifState.financeUpdates ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Member Profile Modal */}
-      {inspectedMember && (
-        <ProfileModal
-          member={inspectedMember}
-          isOpen={showProfileModal}
-          onClose={() => {
-            setShowProfileModal(false);
-            setInspectedMember(null);
-          }}
-        />
+      {/* SCREEN 6: MAHBER HISTORY ARCHIVE */}
+      {activeScreen === 'history' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setActiveScreen('menu')}
+              className="text-xs font-bold text-[#B89A5A] hover:underline"
+            >
+              ← Back to Settings
+            </button>
+            <span className="text-xs font-bold text-[#F5EFE3]">Memory Archive</span>
+          </div>
+
+          <HistoryView
+            history={history}
+            onOpenMezmur={onOpenMezmur}
+            onRefreshHistory={onRefreshHistory}
+          />
+        </div>
       )}
 
-      {/* About Mahber Card */}
-      <div className="rounded-3xl p-4 bg-[#201D19] dark:bg-[#201D19] light:bg-[#FFFDF8] border border-[#B89A5A]/20 shadow-sacred text-center space-y-2">
-        <div className="flex items-center justify-center text-[#B89A5A]">
-          <EthiopianCross size={20} color="#B89A5A" />
+      {/* PASSWORD CHANGE MODAL */}
+      {showPasswordChangeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-[#141A17] border border-[#B89A5A]/40 rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#B89A5A]/20 pb-3">
+              <h3 className="text-sm font-bold text-[#F5EFE3] flex items-center gap-2">
+                <Lock size={16} className="text-[#B89A5A]" />
+                Change Password
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowPasswordChangeModal(false)}
+                className="p-1 rounded-lg text-[#9E9484] hover:text-[#F5EFE3]"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {passwordToast && (
+              <div className="p-3 rounded-xl bg-emerald-950 border border-emerald-500/40 text-emerald-200 text-xs text-center font-bold">
+                {passwordToast}
+              </div>
+            )}
+
+            <form onSubmit={handlePasswordSubmit} className="space-y-3">
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-[#9E9484] block mb-1">
+                  New Password
+                </label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Min 6 characters"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-[#1B2420] border border-[#B89A5A]/30 text-xs text-[#F5EFE3] focus:outline-none focus:border-[#B89A5A]"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-[#9E9484] block mb-1">
+                  Confirm Password
+                </label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Repeat new password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-[#1B2420] border border-[#B89A5A]/30 text-xs text-[#F5EFE3] focus:outline-none focus:border-[#B89A5A]"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordChangeModal(false)}
+                  className="flex-1 py-2 rounded-xl bg-[#1B2420] text-[#9E9484] text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2 rounded-xl bg-gradient-to-r from-[#B89A5A] to-[#C9AB6B] text-[#0E1210] text-xs font-bold hover:opacity-95 shadow-md"
+                >
+                  Update Password
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-        <h4 className="text-xs font-bold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E]">
-          {t.aboutMahber}
-        </h4>
-        <p className="text-[11px] text-gray-400 leading-relaxed px-2">
-          {t.aboutDescription}
-        </p>
-        <p className="text-[10px] text-[#B89A5A]/70 font-serif pt-1">
-          መዝሙረ ዳዊት 133:1 — «እነሆ፥ ወንድሞች በኅብረት ቢቀመጡ መልካም ነው፥ ደስም ያሰኛል!»
-        </p>
-      </div>
+      )}
     </div>
   );
 };

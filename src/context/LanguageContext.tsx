@@ -11,6 +11,10 @@ export interface Translations {
 
   // Nav
   navHome: string;
+  navOverview: string;
+  navGatherings: string;
+  navFinance: string;
+  navMembers: string;
   navMahber: string;
   navRoom: string;
   navMezmur: string;
@@ -156,6 +160,10 @@ const translations: Record<Language, Translations> = {
     welcomeInGodsName: 'በእግዚአብሔር ስም',
 
     navHome: 'ቤት',
+    navOverview: 'አጠቃላይ',
+    navGatherings: 'ማኅበራት',
+    navFinance: 'ፋይናንስ',
+    navMembers: 'አባላት',
     navMahber: 'ማኅበር',
     navRoom: 'ክፍል',
     navMezmur: 'መዝሙር',
@@ -290,6 +298,10 @@ const translations: Record<Language, Translations> = {
     welcomeInGodsName: 'In the Name of God',
 
     navHome: 'Home',
+    navOverview: 'Overview',
+    navGatherings: 'Gatherings',
+    navFinance: 'Finance',
+    navMembers: 'Members',
     navMahber: 'Mahber',
     navRoom: 'Room',
     navMezmur: 'Mezmur',

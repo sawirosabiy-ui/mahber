@@ -4,9 +4,9 @@
 
 @layer base {
   :root {
-    --color-bg: #151311;
-    --color-surface: #201D19;
-    --color-surface-elevated: #29251F;
+    --color-bg: #0E1210;
+    --color-surface: #141A17;
+    --color-surface-elevated: #1B2420;
     --color-text-primary: #F5EFE3;
     --color-text-secondary: #9E9484;
     --color-gold: #B89A5A;
@@ -16,9 +16,9 @@
   }
 
   html.light {
-    --color-bg: #F7F7F3;
+    --color-bg: #FAF8F2;
     --color-surface: #FFFDF8;
-    --color-surface-elevated: #F7F2E8;
+    --color-surface-elevated: #F3EFE6;
     --color-text-primary: #2B241E;
     --color-text-secondary: #74695D;
     --color-gold: #9E7F3D;

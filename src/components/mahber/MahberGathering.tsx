@@ -1,26 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../context/AuthContext';
-import { Gathering, AttendanceRecord, Member, MahberHistoryGathering, GatheringAttendanceEntry } from '../../types';
+import {
+  Gathering,
+  AttendanceRecord,
+  Member,
+  MahberHistoryGathering,
+  GatheringAttendanceEntry,
+} from '../../types';
 import { mahberService } from '../../services/mahberService';
 import { EthiopianCross } from '../common/EthiopianCross';
 import { EmptyView } from '../common/StateViews';
 import { HistoryView } from '../history/HistoryView';
+import { CalendarRemindersView } from './CalendarRemindersView';
+import { HostingRotationView } from './HostingRotationView';
+import { GatheringDetailsModal } from './GatheringDetailsModal';
+import { AttendanceManagerModal } from './AttendanceManagerModal';
 import {
-  Calendar,
+  Calendar as CalendarIcon,
   Clock,
   MapPin,
-  CheckCircle2,
-  XCircle,
-  HelpCircle,
   Users,
-  ChevronRight,
+  RotateCcw,
   BookOpen,
-  History,
-  Lock,
+  ChevronRight,
   ShieldCheck,
-  Edit3,
+  CheckCircle2,
+  Bell,
+  Sparkles,
 } from 'lucide-react';
+import { NavTab } from '../navigation/BottomNav';
 
 interface MahberGatheringProps {
   gathering: Gathering | null;
@@ -29,7 +38,7 @@ interface MahberGatheringProps {
   history?: MahberHistoryGathering[];
   onOpenMezmur?: (mezmurId: string) => void;
   onRefreshHistory?: () => void;
-  onNavigateTab?: (tab: 'home' | 'mahber' | 'room' | 'mezmur' | 'more' | 'admin') => void;
+  onNavigateTab?: (tab: NavTab) => void;
 }
 
 export const MahberGathering: React.FC<MahberGatheringProps> = ({
@@ -43,20 +52,26 @@ export const MahberGathering: React.FC<MahberGatheringProps> = ({
 }) => {
   const { t, language } = useLanguage();
   const { isAdmin } = useAuth();
-  const [activeTab, setActiveTab] = useState<'calendar' | 'program' | 'roster' | 'history'>('program');
+
+  // Top Section Navigation matching Photos 2 & 3: [Upcoming | Past | Calendar | Rotation]
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'past' | 'calendar' | 'rotation'>('upcoming');
+
+  // Modals
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
 
   // Live Gathering Attendance State (auto-updates when admin saves)
   const [actualAttendanceMap, setActualAttendanceMap] = useState<Record<string, GatheringAttendanceEntry>>(() =>
     gathering ? mahberService.getActualAttendance(gathering.id) : {}
   );
 
-  useEffect(() => {
-    const refreshActual = () => {
-      if (gathering) {
-        setActualAttendanceMap(mahberService.getActualAttendance(gathering.id));
-      }
-    };
+  const refreshActual = () => {
+    if (gathering) {
+      setActualAttendanceMap(mahberService.getActualAttendance(gathering.id));
+    }
+  };
 
+  useEffect(() => {
     refreshActual();
 
     const handleStorage = (e: StorageEvent) => {
@@ -69,17 +84,10 @@ export const MahberGathering: React.FC<MahberGatheringProps> = ({
     window.addEventListener('mahber_attendance_updated', refreshActual);
     window.addEventListener('mahber_history_updated', refreshActual);
 
-    let bc: BroadcastChannel | null = null;
-    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-      bc = new BroadcastChannel('mahber_attendance_channel');
-      bc.onmessage = refreshActual;
-    }
-
     return () => {
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('mahber_attendance_updated', refreshActual);
       window.removeEventListener('mahber_history_updated', refreshActual);
-      bc?.close();
     };
   }, [gathering?.id]);
 
@@ -98,463 +106,302 @@ export const MahberGathering: React.FC<MahberGatheringProps> = ({
     );
   }
 
-  const activeMembers = allMembers.filter((m) => !m.isDeactivated);
-  const totalCount = activeMembers.length;
+  const assignedHost =
+    allMembers.find((m) => m.id === gathering.scheduledHostId) ||
+    allMembers.find((m) => m.id === gathering.assignedHostId) ||
+    allMembers[0];
 
-  const hasActualAttendance = Object.keys(actualAttendanceMap).length > 0;
-  const actualPresentCount = Object.values(actualAttendanceMap).filter((e) => e.status === 'PRESENT').length;
-  const actualLateCount = Object.values(actualAttendanceMap).filter((e) => e.status === 'LATE').length;
-  const actualExcusedCount = Object.values(actualAttendanceMap).filter((e) => e.status === 'EXCUSED').length;
-  const actualAbsentCount = Object.values(actualAttendanceMap).filter((e) => e.status === 'ABSENT').length;
-  const totalAttendedCount = actualPresentCount + actualLateCount;
-
-  const comingCount = attendance.filter((a) => a.status === 'coming').length;
-  const cantComeCount = attendance.filter((a) => a.status === 'cant_come').length;
-  const noResponseCount = Math.max(0, totalCount - comingCount - cantComeCount);
-  const displayCount = hasActualAttendance ? totalAttendedCount : comingCount;
-  const attendancePercentage = totalCount > 0 ? Math.round((displayCount / totalCount) * 100) : 0;
-
-  // Month days for Meskerem (1 to 30)
-  const meskeremDays = Array.from({ length: 30 }, (_, i) => i + 1);
-
-  // Extract day number from gathering.ethDate (e.g. "27 መስከረም 2019" -> 27)
-  const gatheringDayMatch = gathering.ethDate.match(/\d+/);
-  const gatheringDay = gatheringDayMatch ? parseInt(gatheringDayMatch[0], 10) : 27;
+  // Up to 4 upcoming monthly gatherings sequence
+  const upcomingGatheringsList = [
+    {
+      id: 'g-2018-01',
+      monthCode: 'MES',
+      ethDate: 'መስከረም 27, 2018 (Oct 6, 2025)',
+      time: '2:00 PM – 5:00 PM',
+      location: 'CMC, Addis Ababa',
+      host: allMembers[0],
+      isNext: true,
+    },
+    {
+      id: 'g-2018-02',
+      monthCode: 'TIK',
+      ethDate: 'ጥቅምት 27, 2018 (Nov 6, 2025)',
+      time: '2:00 PM – 5:00 PM',
+      location: 'Bole, Addis Ababa',
+      host: allMembers[1],
+      isNext: false,
+    },
+    {
+      id: 'g-2018-03',
+      monthCode: 'HID',
+      ethDate: 'ኅዳር 27, 2018 (Dec 6, 2025)',
+      time: '2:00 PM – 5:00 PM',
+      location: 'Megenagna, Addis Ababa',
+      host: allMembers[2],
+      isNext: false,
+    },
+    {
+      id: 'g-2018-04',
+      monthCode: 'TAH',
+      ethDate: 'ታኅሣሥ 27, 2018 (Jan 6, 2026)',
+      time: '2:00 PM – 5:00 PM',
+      location: 'Sarbet, Addis Ababa',
+      host: allMembers[3],
+      isNext: false,
+    },
+  ];
 
   return (
     <div className="space-y-4 pb-20">
-      {/* Top Segmented Control */}
-      <div className="flex p-1 bg-[#201D19] dark:bg-[#201D19] light:bg-[#FFFDF8] rounded-2xl border border-[#B89A5A]/20 shadow-sacred-sm">
+      {/* Top Segmented Controls matching Photos 2 & 3 */}
+      <div className="flex bg-[#141A17] p-1 rounded-2xl border border-[#B89A5A]/20">
         <button
-          onClick={() => setActiveTab('program')}
-          className={`flex-1 py-2 text-xs font-semibold rounded-xl transition ${
-            activeTab === 'program'
-              ? 'bg-[#6F2630] text-white shadow'
-              : 'text-gray-400 dark:text-gray-400 light:text-gray-600 hover:text-white'
+          type="button"
+          onClick={() => setActiveTab('upcoming')}
+          className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'upcoming'
+              ? 'bg-[#B89A5A] text-[#0E1210] shadow'
+              : 'text-[#9E9484] hover:text-[#F5EFE3]'
           }`}
         >
-          {t.tabProgram}
+          {language === 'am' ? 'የሚመጡ' : 'Upcoming'}
         </button>
         <button
+          type="button"
           onClick={() => setActiveTab('calendar')}
-          className={`flex-1 py-2 text-xs font-semibold rounded-xl transition ${
+          className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
             activeTab === 'calendar'
-              ? 'bg-[#6F2630] text-white shadow'
-              : 'text-gray-400 dark:text-gray-400 light:text-gray-600 hover:text-white'
+              ? 'bg-[#B89A5A] text-[#0E1210] shadow'
+              : 'text-[#9E9484] hover:text-[#F5EFE3]'
           }`}
         >
-          {t.tabDate}
+          {language === 'am' ? 'የቀን መቁጠሪያ' : 'Calendar'}
         </button>
         <button
-          onClick={() => setActiveTab('roster')}
-          className={`flex-1 py-2 text-xs font-semibold rounded-xl transition ${
-            activeTab === 'roster'
-              ? 'bg-[#6F2630] text-white shadow'
-              : 'text-gray-400 dark:text-gray-400 light:text-gray-600 hover:text-white'
+          type="button"
+          onClick={() => setActiveTab('rotation')}
+          className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'rotation'
+              ? 'bg-[#B89A5A] text-[#0E1210] shadow'
+              : 'text-[#9E9484] hover:text-[#F5EFE3]'
           }`}
         >
-          {t.attendanceRoster} ({displayCount}/{totalCount})
+          {language === 'am' ? 'የአስተናጋጅ ተራ' : 'Rotation'}
         </button>
         <button
-          onClick={() => setActiveTab('history')}
-          className={`flex-1 py-2 text-xs font-semibold rounded-xl transition ${
-            activeTab === 'history'
-              ? 'bg-[#6F2630] text-white shadow'
-              : 'text-gray-400 dark:text-gray-400 light:text-gray-600 hover:text-white'
+          type="button"
+          onClick={() => setActiveTab('past')}
+          className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'past'
+              ? 'bg-[#B89A5A] text-[#0E1210] shadow'
+              : 'text-[#9E9484] hover:text-[#F5EFE3]'
           }`}
         >
-          {language === 'am' ? 'ታሪክ' : 'History'}
+          {language === 'am' ? 'ያለፉ' : 'Past'}
         </button>
       </div>
 
-      {/* Program View */}
-      {activeTab === 'program' && (
-        <div className="space-y-4 animate-fade-in">
-          {/* Header Card with Church Photography */}
-          <div className="relative rounded-3xl overflow-hidden border border-[#B89A5A]/30 bg-[#201D19] shadow-sacred">
-            <div className="h-40 w-full relative">
-              <img
-                src={gathering.imageUrl || "https://images.unsplash.com/photo-1548625361-195fe61a55c3?w=800&auto=format&fit=crop&q=80"}
-                alt="Ethiopian Orthodox Church"
-                className="w-full h-full object-cover brightness-60"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#201D19] via-[#201D19]/50 to-transparent" />
-              <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-white flex items-center gap-1.5">
-                    <EthiopianCross size={18} color="#B89A5A" />
-                    <span>{gathering.titleAm || t.appTitle}</span>
-                  </h2>
-                  <p className="text-xs text-gray-300">
-                    {gathering.ethDate} • {gathering.time}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <span className="px-2.5 py-1 rounded-full bg-[#315C48]/80 text-[11px] text-white border border-[#315C48]">
-                    {gathering.location}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 space-y-2 border-t border-white/5">
-              <div className="flex items-center gap-2 text-xs text-gray-400">
-                <MapPin size={14} className="text-[#B89A5A]" />
-                <span>{gathering.locationDetails || t.gatheringAddress}</span>
-              </div>
-              {gathering.notes && (
-                <p className="text-[11px] text-gray-300 italic pt-1">
-                  «{gathering.notes}»
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Today's Program List */}
-          <div className="rounded-3xl p-4 bg-[#201D19] dark:bg-[#201D19] light:bg-[#FFFDF8] border border-[#B89A5A]/20 shadow-sacred space-y-3">
-            <div className="flex items-center justify-between border-b border-[#B89A5A]/15 pb-2">
-              <div className="flex items-center gap-2">
-                <BookOpen size={16} className="text-[#B89A5A]" />
-                <h3 className="text-sm font-bold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E]">
-                  {t.todaysProgram}
-                </h3>
-              </div>
-              <span className="text-[11px] text-[#B89A5A] font-serif">
-                {gathering.program.length} ክፍሎች
+      {/* VIEW 1: UPCOMING GATHERINGS (Photos 2 & 3) */}
+      {activeTab === 'upcoming' && (
+        <div className="space-y-4">
+          {/* Featured Hero Card for Next Gathering matching Photos 2 & 3 */}
+          <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-[#6F2630]/80 via-[#1B2420] to-[#141A17] border border-[#B89A5A]/40 shadow-xl p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="px-3 py-1 rounded-full bg-[#B89A5A]/20 text-[#B89A5A] text-[10px] font-black uppercase tracking-wider border border-[#B89A5A]/30 flex items-center gap-1.5">
+                <Sparkles size={12} />
+                {language === 'am' ? 'ቀጣይ ማኅበር' : 'Next Gathering'}
+              </span>
+              <span className="text-xs text-[#F5EFE3] font-semibold flex items-center gap-1">
+                <Clock size={13} className="text-[#B89A5A]" />
+                {gathering.time}
               </span>
             </div>
 
-            <div className="space-y-2">
-              {gathering.program.map((item) => (
+            <div className="flex items-start gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-[#6F2630] border-2 border-[#B89A5A] flex flex-col items-center justify-center text-center shadow-lg shrink-0">
+                <span className="text-[10px] font-black text-[#B89A5A] tracking-wider uppercase">
+                  MES
+                </span>
+                <span className="text-xl font-black text-white leading-none">27</span>
+              </div>
+
+              <div>
+                <h3 className="text-base font-bold text-[#F5EFE3] leading-tight">
+                  {gathering.ethDate}
+                </h3>
+                <p className="text-xs text-[#B89A5A]">{gathering.gregDate}</p>
+                <p className="text-xs text-[#9E9484] flex items-center gap-1 mt-1">
+                  <MapPin size={12} className="text-[#B89A5A]" />
+                  {gathering.location} · Hosted by {assignedHost.name}
+                </p>
+              </div>
+            </div>
+
+            {/* CTAs */}
+            <div className="pt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setIsDetailsModalOpen(true)}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#B89A5A] to-[#C9AB6B] text-[#0E1210] text-xs font-bold flex items-center justify-center gap-1.5 shadow-md hover:opacity-95"
+              >
+                {language === 'am' ? 'ዝርዝር መረጃ እይ →' : 'View Details →'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsAttendanceModalOpen(true)}
+                className="px-4 py-2.5 rounded-xl bg-[#1B2420] text-[#F5EFE3] text-xs font-bold border border-[#B89A5A]/30 hover:bg-[#25322C] flex items-center gap-1.5"
+              >
+                <Users size={14} className="text-[#B89A5A]" />
+                {isAdmin ? 'Roll Call' : 'Attendance'}
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Actions Grid matching Photo 2 Screen 5 */}
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => setIsAttendanceModalOpen(true)}
+              className="p-3 rounded-2xl bg-[#141A17] border border-[#B89A5A]/20 flex flex-col items-center text-center gap-1.5 hover:border-[#B89A5A]/50 transition-colors"
+            >
+              <div className="w-8 h-8 rounded-xl bg-[#B89A5A]/15 text-[#B89A5A] flex items-center justify-center">
+                <Users size={16} />
+              </div>
+              <span className="text-[11px] font-bold text-[#F5EFE3]">
+                {language === 'am' ? 'ተሳትፎ መዝግብ' : 'Attendance'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('calendar')}
+              className="p-3 rounded-2xl bg-[#141A17] border border-[#B89A5A]/20 flex flex-col items-center text-center gap-1.5 hover:border-[#B89A5A]/50 transition-colors"
+            >
+              <div className="w-8 h-8 rounded-xl bg-[#B89A5A]/15 text-[#B89A5A] flex items-center justify-center">
+                <CalendarIcon size={16} />
+              </div>
+              <span className="text-[11px] font-bold text-[#F5EFE3]">
+                {language === 'am' ? 'ቀን መቁጠሪያ' : 'Calendar'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('rotation')}
+              className="p-3 rounded-2xl bg-[#141A17] border border-[#B89A5A]/20 flex flex-col items-center text-center gap-1.5 hover:border-[#B89A5A]/50 transition-colors"
+            >
+              <div className="w-8 h-8 rounded-xl bg-[#B89A5A]/15 text-[#B89A5A] flex items-center justify-center">
+                <RotateCcw size={16} />
+              </div>
+              <span className="text-[11px] font-bold text-[#F5EFE3]">
+                {language === 'am' ? 'የአስተናጋጅ ተራ' : 'Rotation'}
+              </span>
+            </button>
+          </div>
+
+          {/* Upcoming Schedule List matching Photo 2 & 3 */}
+          <div className="bg-[#141A17] rounded-2xl p-4 border border-[#B89A5A]/20 space-y-3">
+            <h4 className="text-xs font-bold text-[#B89A5A] uppercase tracking-wider">
+              {language === 'am' ? 'የሚቀጥሉት ወራት ማኅበራት' : 'Upcoming Gatherings Schedule'}
+            </h4>
+
+            <div className="space-y-2.5">
+              {upcomingGatheringsList.map((item) => (
                 <div
-                  key={item.order}
-                  className="p-3 rounded-2xl bg-[#29251F]/70 dark:bg-[#29251F]/70 light:bg-[#F8F3EA] border border-[#B89A5A]/10 flex items-center justify-between"
+                  key={item.id}
+                  onClick={() => setIsDetailsModalOpen(true)}
+                  className="p-3 rounded-xl bg-[#1B2420] border border-[#B89A5A]/15 flex items-center justify-between hover:border-[#B89A5A]/40 cursor-pointer transition-colors"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-7 h-7 rounded-full bg-[#B89A5A]/15 text-[#B89A5A] font-bold text-xs flex items-center justify-center font-serif">
-                      {item.order}
+                    <div className="w-10 h-10 rounded-xl bg-[#6F2630]/80 border border-[#B89A5A]/50 flex flex-col items-center justify-center text-center shrink-0">
+                      <span className="text-[8px] font-black text-[#B89A5A] uppercase">
+                        {item.monthCode}
+                      </span>
+                      <span className="text-sm font-black text-white leading-none">27</span>
                     </div>
                     <div>
-                      <div className="text-xs font-semibold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E]">
-                        {language === 'am' ? item.titleAm : item.titleEn}
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-bold text-[#F5EFE3]">{item.ethDate}</p>
+                        {item.isNext && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-[#B89A5A] text-[#0E1210] text-[8px] font-black uppercase">
+                            Next
+                          </span>
+                        )}
                       </div>
-                      <div className="text-[10px] text-gray-400">
-                        {language === 'am' ? item.titleEn : item.titleAm}
-                      </div>
+                      <p className="text-[11px] text-[#9E9484] flex items-center gap-1 mt-0.5">
+                        <MapPin size={10} className="text-[#B89A5A]" />
+                        {item.location} · Host: {item.host?.name || 'Assigned Host'}
+                      </p>
                     </div>
                   </div>
-                  <ChevronRight size={14} className="text-gray-500" />
+                  <ChevronRight size={14} className="text-[#9E9484]" />
                 </div>
               ))}
             </div>
-
-            {/* THIS MAHBER'S MEZMUR */}
-            {(() => {
-              const currentM = mahberService.getCurrentStudyMezmur();
-              if (!currentM) return null;
-              return (
-                <div
-                  onClick={() => {
-                    const mezmurTabBtn = document.querySelector('button[data-tab="mezmur"]') as HTMLButtonElement;
-                    if (mezmurTabBtn) mezmurTabBtn.click();
-                  }}
-                  className="p-3.5 rounded-2xl bg-[#201D19] dark:bg-[#201D19] light:bg-[#FFFDF8] border border-[#B89A5A]/25 shadow-sacred-sm cursor-pointer hover:border-[#B89A5A]/50 transition space-y-1.5"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-[#B89A5A] uppercase tracking-wider">
-                      {language === 'am' ? 'የዚህ ማኅበር መዝሙር' : "THIS MAHBER'S MEZMUR"}
-                    </span>
-                    <span className="text-[11px] text-gray-400">{currentM.duration}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="text-xs font-bold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E]">
-                        🎵 {currentM.titleAm}
-                      </h4>
-                      <p className="text-[11px] text-gray-400">{currentM.titleEn || currentM.categoryAm}</p>
-                    </div>
-                    <span className="text-[11px] text-[#B89A5A] font-medium">
-                      {language === 'am' ? 'ክፈት →' : 'Open →'}
-                    </span>
-                  </div>
-                </div>
-              );
-            })()}
           </div>
 
-          {/* Attendance progress summary card */}
-          <div
-            onClick={() => setActiveTab('roster')}
-            className="rounded-2xl p-3.5 bg-[#201D19] dark:bg-[#201D19] light:bg-[#FFFDF8] border border-[#B89A5A]/20 shadow-sacred-sm flex items-center justify-between cursor-pointer hover:border-[#B89A5A]/40 transition"
-          >
-            <div className="flex items-center gap-2.5">
-              <Users size={16} className="text-[#315C48]" />
-              <span className="text-xs font-medium text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E]">
-                {comingCount} / {totalCount} {t.attendingOutOf}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-24 bg-gray-800 rounded-full h-2 overflow-hidden border border-white/5">
-                <div
-                  className="bg-[#315C48] h-full rounded-full transition-all duration-500"
-                  style={{ width: `${attendancePercentage}%` }}
-                />
-              </div>
-              <ChevronRight size={14} className="text-[#B89A5A]" />
-            </div>
+          {/* Scripture Card matching Photo 2 & 3 */}
+          <div className="p-4 rounded-2xl bg-[#141A17] border border-[#B89A5A]/30 text-center space-y-1.5">
+            <EthiopianCross size={20} color="#B89A5A" className="mx-auto" />
+            <p className="text-xs font-medium text-[#F5EFE3] italic">
+              "For where two or three are gathered in my name, there am I among them."
+            </p>
+            <p className="text-[10px] font-bold text-[#B89A5A]">Matthew 18:20</p>
           </div>
         </div>
       )}
 
-      {/* Calendar View */}
+      {/* VIEW 2: CALENDAR & REMINDERS (Photos 2 & 7) */}
       {activeTab === 'calendar' && (
-        <div className="space-y-4 animate-fade-in">
-          <div className="rounded-3xl p-4 bg-[#201D19] dark:bg-[#201D19] light:bg-[#FFFDF8] border border-[#B89A5A]/20 shadow-sacred space-y-4">
-            <div className="text-center pb-2 border-b border-[#B89A5A]/15">
-              <h3 className="text-base font-bold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E]">
-                {gathering.ethDate}
-              </h3>
-              <p className="text-xs text-gray-400">{gathering.gregDate}</p>
-            </div>
-
-            {/* Days of week in Amharic & English */}
-            <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-semibold text-gray-400 pb-1">
-              <span>እሑድ</span>
-              <span>ሰኞ</span>
-              <span>ማክሰ</span>
-              <span>ረቡዕ</span>
-              <span>ሐሙስ</span>
-              <span>ዓርብ</span>
-              <span>ቅዳሜ</span>
-            </div>
-
-            {/* Calendar Days Grid */}
-            <div className="grid grid-cols-7 gap-1.5 text-center">
-              {meskeremDays.map((day) => {
-                const isGatheringDay = day === gatheringDay;
-                return (
-                  <div
-                    key={day}
-                    className={`aspect-square rounded-xl flex items-center justify-center text-xs font-medium transition ${
-                      isGatheringDay
-                        ? 'bg-[#6F2630] text-white ring-2 ring-[#B89A5A] font-bold shadow-md'
-                        : day < gatheringDay
-                        ? 'text-gray-300 dark:text-gray-300 light:text-gray-700 hover:bg-white/5'
-                        : 'text-gray-500 hover:bg-white/5'
-                    }`}
-                  >
-                    <span>{day}</span>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Selected Gathering Day Legend */}
-            <div className="p-3 rounded-2xl bg-[#6F2630]/15 border border-[#6F2630]/30 flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-[#6F2630] text-white flex items-center justify-center font-bold text-sm shrink-0">
-                {gatheringDay}
-              </div>
-              <div className="text-xs">
-                <div className="font-bold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E]">
-                  {gathering.ethDate} • {t.nextMahber}
-                </div>
-                <div className="text-gray-400">
-                  {gathering.time} • {gathering.location}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <CalendarRemindersView
+          currentGathering={gathering}
+          onSelectGathering={() => setIsDetailsModalOpen(true)}
+        />
       )}
 
-      {/* Attendance Roster View (Read-Only for Members, Admin Editable via Dashboard) */}
-      {activeTab === 'roster' && (
-        <div className="space-y-4 animate-fade-in">
-          {/* Permission / Security Notice Banner */}
-          <div className="rounded-2xl p-3 bg-[#201D19] dark:bg-[#201D19] light:bg-[#FFFDF8] border border-[#B89A5A]/25 shadow-sacred flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2">
-              <Lock size={15} className="text-[#B89A5A] shrink-0" />
-              <div className="min-w-0">
-                <span className="font-semibold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E]">
-                  {language === 'am' ? 'የተሳትፎ መዝገብ (ለንባብ ብቻ)' : 'Attendance Roster (Read-Only)'}
-                </span>
-                <p className="text-[10px] text-gray-400">
-                  {language === 'am'
-                    ? 'አባላት ማየት ብቻ ይችላሉ፤ ማስተካከል የሚችሉት አስተዳዳሪዎች ብቻ ናቸው።'
-                    : 'All members can view attendance. Only admins can record/edit.'}
-                </p>
-              </div>
-            </div>
-
-            {isAdmin && onNavigateTab && (
-              <button
-                onClick={() => onNavigateTab('admin')}
-                className="px-2.5 py-1 rounded-xl bg-[#6F2630] hover:bg-[#8A2F3D] text-white text-[11px] font-bold transition flex items-center gap-1 shadow-sm shrink-0"
-              >
-                <Edit3 size={12} />
-                <span>{language === 'am' ? 'አስተዳድር' : 'Edit Live'}</span>
-              </button>
-            )}
-          </div>
-
-          <div className="rounded-3xl p-4 bg-[#201D19] dark:bg-[#201D19] light:bg-[#FFFDF8] border border-[#B89A5A]/20 shadow-sacred space-y-3">
-            <div className="flex items-center justify-between border-b border-[#B89A5A]/15 pb-2">
-              <h3 className="text-sm font-bold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E]">
-                {hasActualAttendance
-                  ? (language === 'am' ? 'የስብሰባው የተሳትፎ መዝገብ' : 'Recorded Gathering Attendance')
-                  : t.attendanceRoster}
-              </h3>
-              <div className="text-xs font-semibold text-[#315C48] dark:text-[#529575]">
-                {hasActualAttendance ? totalAttendedCount : comingCount} / {totalCount}{' '}
-                {hasActualAttendance ? (language === 'am' ? 'ተገኝተዋል' : 'Attended') : t.statusComing}
-              </div>
-            </div>
-
-            {/* Stat Row - 4 Status Breakdown if actual attendance recorded, else RSVP */}
-            {hasActualAttendance ? (
-              <div className="grid grid-cols-4 gap-1.5 text-center text-xs">
-                <div className="p-2 rounded-xl bg-[#315C48]/15 border border-[#315C48]/30">
-                  <div className="font-bold text-[#427A60] dark:text-[#529575] text-sm">{actualPresentCount}</div>
-                  <div className="text-[10px] text-gray-400">🟢 {language === 'am' ? 'ተገኝቷል' : 'Present'}</div>
-                </div>
-                <div className="p-2 rounded-xl bg-[#E07A24]/15 border border-[#E07A24]/30">
-                  <div className="font-bold text-[#E07A24] text-sm">{actualLateCount}</div>
-                  <div className="text-[10px] text-gray-400">🟠 {language === 'am' ? 'አርፍዷል' : 'Late'}</div>
-                </div>
-                <div className="p-2 rounded-xl bg-[#B89A5A]/15 border border-[#B89A5A]/30">
-                  <div className="font-bold text-[#D3BA7E] text-sm">{actualExcusedCount}</div>
-                  <div className="text-[10px] text-gray-400">🟡 {language === 'am' ? 'በፈቃድ' : 'Excused'}</div>
-                </div>
-                <div className="p-2 rounded-xl bg-[#6F2630]/15 border border-[#6F2630]/30">
-                  <div className="font-bold text-[#D98A94] text-sm">{actualAbsentCount}</div>
-                  <div className="text-[10px] text-gray-400">🔴 {language === 'am' ? 'ያልተገኘ' : 'Absent'}</div>
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                <div className="p-2 rounded-xl bg-[#315C48]/15 border border-[#315C48]/30">
-                  <div className="font-bold text-[#315C48]">{comingCount}</div>
-                  <div className="text-[10px] text-gray-400">{t.statusComing}</div>
-                </div>
-                <div className="p-2 rounded-xl bg-[#6F2630]/15 border border-[#6F2630]/30">
-                  <div className="font-bold text-[#6F2630]">{cantComeCount}</div>
-                  <div className="text-[10px] text-gray-400">{t.statusCantCome}</div>
-                </div>
-                <div className="p-2 rounded-xl bg-gray-500/10 border border-gray-500/20">
-                  <div className="font-bold text-gray-400">{noResponseCount}</div>
-                  <div className="text-[10px] text-gray-400">{t.statusNoResponse}</div>
-                </div>
-              </div>
-            )}
-
-            {/* Progress bar */}
-            <div className="w-full bg-gray-800 rounded-full h-2.5 overflow-hidden border border-white/5">
-              <div
-                className="bg-[#315C48] h-full rounded-full transition-all duration-500"
-                style={{
-                  width: `${
-                    totalCount > 0
-                      ? Math.round(((hasActualAttendance ? totalAttendedCount : comingCount) / totalCount) * 100)
-                      : 0
-                  }%`,
-                }}
-              />
-            </div>
-
-            {/* Members Attendance List (Strictly Read-Only with Privacy Protection) */}
-            <div className="divide-y divide-[#B89A5A]/10">
-              {activeMembers.map((member) => {
-                const actualStatus = actualAttendanceMap[member.id];
-                const record = attendance.find((a) => a.memberId === member.id);
-                const status = record?.status || 'no_response';
-
-                return (
-                  <div key={member.id} className="py-2.5 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={member.avatarUrl}
-                        alt={member.name}
-                        className="w-9 h-9 rounded-full object-cover border border-[#B89A5A]/30"
-                      />
-                      <div>
-                        <div className="text-xs font-semibold text-[#F5EFE3] dark:text-[#F5EFE3] light:text-[#2B241E] flex items-center gap-1.5">
-                          <span>{member.amharicName}</span>
-                          {member.role === 'admin' && (
-                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#B89A5A]/20 text-[#B89A5A] font-normal">
-                              አስተዳዳሪ
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[10px] text-gray-400">{member.name}</div>
-                      </div>
-                    </div>
-
-                    {/* Status Badge (Read-Only) */}
-                    <div className="text-right">
-                      {actualStatus ? (
-                        actualStatus.status === 'PRESENT' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#315C48]/25 text-[#427A60] dark:text-[#529575] border border-[#315C48]/40 text-[11px] font-semibold">
-                            <span>🟢</span>
-                            <span>{language === 'am' ? 'ተገኝቷል' : 'Present'}</span>
-                          </span>
-                        ) : actualStatus.status === 'EXCUSED' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#B89A5A]/25 text-[#D3BA7E] border border-[#B89A5A]/40 text-[11px] font-semibold">
-                            <span>🟡</span>
-                            <span>{language === 'am' ? 'በይቅርታ' : 'Excused'}</span>
-                          </span>
-                        ) : actualStatus.status === 'LATE' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#E07A24]/25 text-[#E07A24] border border-[#E07A24]/50 text-[11px] font-bold">
-                            <span>🟠</span>
-                            <span>{language === 'am' ? 'ዘግይቷል' : 'Late'}</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#6F2630]/25 text-[#D98A94] border border-[#6F2630]/40 text-[11px] font-semibold">
-                            <span>🔴</span>
-                            <span>{language === 'am' ? 'ያልተገኘ' : 'Absent'}</span>
-                          </span>
-                        )
-                      ) : status === 'coming' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#315C48]/20 text-[#427A60] dark:text-[#529575] border border-[#315C48]/30 text-[11px] font-medium">
-                          <CheckCircle2 size={12} />
-                          <span>{t.statusComing}</span>
-                        </span>
-                      ) : status === 'cant_come' ? (
-                        <div className="flex flex-col items-end">
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#6F2630]/20 text-[#8C3542] dark:text-[#D98A94] border border-[#6F2630]/30 text-[11px] font-medium">
-                            <XCircle size={12} />
-                            <span>{t.statusCantCome}</span>
-                          </span>
-                          {/* If current viewer is admin, display note indicator */}
-                          {isAdmin && record?.privateReason && (
-                            <span className="text-[10px] text-[#B89A5A] mt-0.5">
-                              ምክንያት: {record.privateReason}
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gray-500/15 text-gray-400 border border-gray-500/20 text-[11px]">
-                          <HelpCircle size={12} />
-                          <span>{t.statusNoResponse}</span>
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+      {/* VIEW 3: HOSTING ROTATION & SWAPS (Photos 3 & 6) */}
+      {activeTab === 'rotation' && (
+        <HostingRotationView
+          allMembers={allMembers}
+          gatheringId={gathering.id}
+          onRotationUpdated={refreshActual}
+        />
       )}
 
-      {/* History / Digital Memory Book View */}
-      {activeTab === 'history' && (
-        <div className="space-y-4 animate-fade-in">
-          <HistoryView
-            history={history}
-            onOpenMezmur={onOpenMezmur}
-            onRefreshHistory={onRefreshHistory}
-          />
-        </div>
+      {/* VIEW 4: PAST GATHERINGS & ARCHIVE */}
+      {activeTab === 'past' && (
+        <HistoryView
+          history={history}
+          onRefreshHistory={onRefreshHistory}
+        />
+      )}
+
+      {/* MODAL: Gathering Details matching Photo 4 */}
+      {isDetailsModalOpen && (
+        <GatheringDetailsModal
+          gathering={gathering}
+          allMembers={allMembers}
+          onClose={() => setIsDetailsModalOpen(false)}
+          onOpenAttendanceRollCall={() => {
+            setIsDetailsModalOpen(false);
+            setIsAttendanceModalOpen(true);
+          }}
+          onOpenRotation={() => {
+            setIsDetailsModalOpen(false);
+            setActiveTab('rotation');
+          }}
+        />
+      )}
+
+      {/* MODAL: Attendance Roll Call Manager matching Photo 5 */}
+      {isAttendanceModalOpen && (
+        <AttendanceManagerModal
+          gatheringId={gathering.id}
+          gatheringTitle={`${gathering.ethDate} · ${gathering.time}`}
+          allMembers={allMembers}
+          onClose={() => setIsAttendanceModalOpen(false)}
+          onSaved={refreshActual}
+        />
       )}
     </div>
   );
