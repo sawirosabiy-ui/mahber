@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test": "vite build --ssr tests/mahber_rules.test.ts --outDir dist-test && node dist-test/mahber_rules.test.js",
+    "test:foundation": "vite build --ssr tests/user_foundation.test.ts --outDir dist-test && node dist-test/user_foundation.test.js",
+    "test:all": "pnpm test && pnpm run test:foundation",
     "preview": "vite preview"
   },
   "dependencies": {

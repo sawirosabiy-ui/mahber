@@ -24,6 +24,7 @@ interface AuthContextType {
   updateMemberRole: (memberId: string, newRole: Role) => { success: boolean; error?: string };
   assignMemberAdminRoles: (memberId: string, roles: AdminRole[]) => { success: boolean; error?: string };
   updateMemberDetails: (memberId: string, updates: Partial<Member>) => void;
+  updateUserProfile: (updates: { phone?: string; avatarUrl?: string }) => Promise<{ success: boolean; error?: string }>;
   addMember: (member: Omit<Member, 'id'>) => { success: boolean; error?: string };
   deactivateMember: (memberId: string) => { success: boolean; error?: string };
 }
@@ -188,6 +189,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const phoneDigits = m.phone.replace(/\D/g, '');
       
       return (
+        m.email?.toLowerCase() === cleanInput ||
         firstName === emailPrefix ||
         fullName === emailPrefix.replace(/\s+/g, '') ||
         (cleanPhoneInput.length >= 4 && phoneDigits.includes(cleanPhoneInput)) ||
@@ -332,6 +334,77 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return { success: true };
   };
 
+  const updateUserProfile = async (
+    updates: { phone?: string; avatarUrl?: string }
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!isAuthenticated || !currentUser) {
+      return { success: false, error: 'Unauthorized: You must be signed in to update your profile.' };
+    }
+
+    const { phone, avatarUrl } = updates;
+
+    // Validate phone number if provided (empty is allowed)
+    if (phone !== undefined && phone.trim() !== '') {
+      const cleanPhone = phone.trim();
+      // Allow Ethiopian numbers (+251..., 09..., 07...) or international formats
+      const ethiopianOrIntlRegex = /^(\+?[1-9]\d{6,14}|0[79]\d{8})$/;
+      const digitsOnly = cleanPhone.replace(/[\s\-\(\)]/g, '');
+      if (!ethiopianOrIntlRegex.test(digitsOnly)) {
+        return {
+          success: false,
+          error: 'Invalid phone number format. Please enter a valid Ethiopian (+251 9... / +251 7... / 09...) or international number.',
+        };
+      }
+    }
+
+    // Validate avatarUrl if provided
+    if (avatarUrl !== undefined && avatarUrl.trim() !== '') {
+      const isDataUri = avatarUrl.startsWith('data:image/');
+      const isHttpUri = avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://');
+      if (!isDataUri && !isHttpUri) {
+        return {
+          success: false,
+          error: 'Invalid profile picture format. Must be an image URL or uploaded image file.',
+        };
+      }
+    }
+
+    // Update state strictly for current authenticated user only
+    const updatedMember: Member = {
+      ...currentUser,
+      ...(phone !== undefined ? { phone: phone.trim() } : {}),
+      ...(avatarUrl !== undefined ? { avatarUrl: avatarUrl.trim() } : {}),
+    };
+
+    setMembers((prev) =>
+      prev.map((m) => (m.id === currentUser.id ? updatedMember : m))
+    );
+
+    // If live Supabase is active, persist to Supabase profiles using RLS auth
+    if (isLiveSupabaseConfigured()) {
+      try {
+        const payload: { phone?: string; avatar_url?: string; updated_at: string } = {
+          updated_at: new Date().toISOString(),
+        };
+        if (phone !== undefined) payload.phone = phone.trim();
+        if (avatarUrl !== undefined) payload.avatar_url = avatarUrl.trim();
+
+        const { error } = await supabase
+          .from('profiles')
+          .update(payload)
+          .eq('id', currentUser.id);
+
+        if (error) {
+          console.warn('Supabase profile update notice:', error.message);
+        }
+      } catch (err: any) {
+        console.warn('Supabase profile sync error:', err.message);
+      }
+    }
+
+    return { success: true };
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -354,6 +427,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         updateMemberRole,
         assignMemberAdminRoles,
         updateMemberDetails,
+        updateUserProfile,
         addMember,
         deactivateMember,
       }}

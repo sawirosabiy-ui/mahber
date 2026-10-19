@@ -14,6 +14,7 @@ export interface Member {
   name: string;
   amharicName: string;
   baptismalName?: string;
+  email?: string;
   role: Role;
   roles?: AdminRole[];
   phone: string;
