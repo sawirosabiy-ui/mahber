@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../context/AuthContext';
 import { EthiopianCross } from '../common/EthiopianCross';
-import { Mail, Lock, LogIn, AlertCircle, CheckCircle2, ShieldCheck, KeyRound, UserCheck, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, LogIn, AlertCircle, CheckCircle2, ShieldCheck, KeyRound, UserCheck, ArrowRight, ArrowLeft, ChevronDown, Sparkles } from 'lucide-react';
 import { Member } from '../../types';
 
 interface LoginViewProps {
@@ -11,7 +11,7 @@ interface LoginViewProps {
 
 export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
   const { t, language } = useLanguage();
-  const { loginWithCredentials, resetPassword, validateInviteCode, activateAccountWithInvite } = useAuth();
+  const { allMembers, loginWithCredentials, resetPassword, validateInviteCode, activateAccountWithInvite } = useAuth();
 
   const [mode, setMode] = useState<'login' | 'invite' | 'reset'>('login');
   const [email, setEmail] = useState('');
@@ -27,6 +27,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showQuickSelect, setShowQuickSelect] = useState(false);
 
   const handleVerifyInviteCode = (e: React.FormEvent) => {
     e.preventDefault();
@@ -420,6 +421,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
                     className="w-full rounded-xl bg-[#0E1210] border border-[#B89A5A]/30 pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-[#B89A5A] transition"
                   />
                 </div>
+                <p className="text-[10px] text-gray-400 mt-1">
+                  💡 {language === 'am' ? 'የይለፍ ቃል፡ Mahber2026! (ወይም ቢያንስ 4 ፊደላት)' : 'Default password: Mahber2026! (or 4+ chars)'}
+                </p>
               </div>
             )}
 
@@ -457,6 +461,51 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
                 </>
               )}
             </button>
+
+            {/* Quick 1-Click Member Selector for Effortless Testing */}
+            {mode === 'login' && (
+              <div className="pt-2 border-t border-[#B89A5A]/15">
+                <button
+                  type="button"
+                  onClick={() => setShowQuickSelect(!showQuickSelect)}
+                  className="w-full text-left flex items-center justify-between text-[11px] text-[#B89A5A] hover:underline py-1"
+                >
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <Sparkles size={13} />
+                    <span>{language === 'am' ? 'የአባላት ፈጣን መግቢያ (ለሙከራ)' : 'Quick Test Member Login (1-Click)'}</span>
+                  </span>
+                  <ChevronDown size={14} className={`transform transition ${showQuickSelect ? 'rotate-180' : ''}`} />
+                </button>
+
+                {showQuickSelect && (
+                  <div className="grid grid-cols-2 gap-1.5 pt-2 max-h-44 overflow-y-auto animate-fade-in pr-0.5">
+                    {allMembers.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={async () => {
+                          setEmail(m.email || m.name);
+                          setPassword('Mahber2026!');
+                          setLoading(true);
+                          const res = await loginWithCredentials(m.email || m.name, 'Mahber2026!');
+                          setLoading(false);
+                          if (res.success && onSuccess) onSuccess();
+                        }}
+                        className="p-1.5 rounded-xl bg-[#0E1210] hover:bg-[#B89A5A]/20 border border-[#B89A5A]/20 text-left flex items-center gap-2 transition"
+                      >
+                        <div className="w-6 h-6 rounded-full bg-[#B89A5A]/20 text-[#B89A5A] flex items-center justify-center text-[10px] font-bold shrink-0">
+                          {m.name.charAt(0)}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-bold text-[#F5EFE3] truncate">{m.name}</div>
+                          <div className="text-[8px] text-gray-400 truncate">{m.role === 'admin' ? 'Admin' : 'Member'}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {mode === 'reset' && (
               <button
