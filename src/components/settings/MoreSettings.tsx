@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { MahberHistoryGathering, Member } from '../../types';
 import { EthiopianCross } from '../common/EthiopianCross';
 import { HistoryView } from '../history/HistoryView';
+import { UserProfileView } from '../profile/UserProfileView';
 import {
   Globe,
   Moon,
@@ -229,66 +230,9 @@ export const MoreSettings: React.FC<MoreSettingsProps> = ({
         </div>
       )}
 
-      {/* SCREEN 2: PROFILE & PERSONAL INFO (Photo 14 Screen 1 & 2) */}
+      {/* SCREEN 2: PROFILE & PERSONAL INFO */}
       {activeScreen === 'profile' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setActiveScreen('menu')}
-              className="text-xs font-bold text-[#B89A5A] hover:underline"
-            >
-              ← Back to Settings
-            </button>
-            <span className="text-xs font-bold text-[#F5EFE3]">My Profile</span>
-          </div>
-
-          <div className="bg-[#141A17] rounded-3xl p-5 border border-[#B89A5A]/30 space-y-4">
-            <div className="flex items-center gap-4">
-              <img
-                src={currentUser.avatarUrl}
-                alt={currentUser.name}
-                className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#B89A5A]"
-              />
-              <div>
-                <h3 className="text-base font-bold text-[#F5EFE3]">{currentUser.name}</h3>
-                <p className="text-xs text-[#9E9484]">{currentUser.amharicName}</p>
-                <p className="text-xs text-[#B89A5A] mt-1 font-mono">
-                  TRX-7846-{currentUser.id.toUpperCase()}
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-2.5 pt-3 border-t border-[#B89A5A]/15 text-xs">
-              <div className="flex justify-between py-1 border-b border-[#B89A5A]/10">
-                <span className="text-[#9E9484]">Baptismal Name (የክርስትና ስም):</span>
-                <span className="font-bold text-[#F5EFE3]">
-                  {currentUser.baptismalName || 'ገብረ እግዚአብሔር'}
-                </span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-[#B89A5A]/10">
-                <span className="text-[#9E9484]">Spiritual Father (የንስሐ አባት):</span>
-                <span className="font-bold text-[#F5EFE3]">
-                  {currentUser.spiritualRole || 'መጋቤ ሐዲስ ቀሲስ ዮሐንስ'}
-                </span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-[#B89A5A]/10">
-                <span className="text-[#9E9484]">Phone Number:</span>
-                <span className="font-semibold text-[#F5EFE3]">{currentUser.phone}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-[#B89A5A]/10">
-                <span className="text-[#9E9484]">Membership Status:</span>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 font-bold border border-emerald-500/30">
-                  Active
-                </span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-[#9E9484]">Member Since:</span>
-                <span className="text-[#F5EFE3]">Meskerem 2018</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <UserProfileView onBack={() => setActiveScreen('menu')} />
       )}
 
       {/* SCREEN 3: APPEARANCE & LANGUAGE (Photo 14 Screen 3) */}
